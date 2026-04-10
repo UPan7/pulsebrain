@@ -27,7 +27,8 @@ from src.config import (
 from src.extractors.youtube import get_recent_video_ids, resolve_channel_id
 from src.pipeline import process_web_article, process_youtube_video
 from src.router import SourceType, detect_source_type
-from src.storage import get_recent_entries, get_stats, search_knowledge
+from src.storage import get_recent_entries, get_stats, search_for_question, search_knowledge
+from src.summarize import answer_question
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/run — Запустить проверку каналов\n"
         "/stats — Подробная статистика\n"
         "/help — Эта справка\n\n"
-        "Или просто отправь ссылку — бот определит тип и обработает!"
+        "Или просто отправь ссылку — бот определит тип и обработает!\n"
+        "Или задай вопрос текстом — бот ответит по базе знаний."
     )
 
 
@@ -306,7 +308,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     urls = URL_PATTERN.findall(text)
 
     if not urls:
-        return  # Not a URL message, ignore
+        # No URLs — treat as a free-form question to the knowledge base
+        await _handle_question(update, context, text)
+        return
 
     for url in urls:
         source_type = detect_source_type(url)
@@ -430,6 +434,51 @@ async def _handle_web_article(
         ]
     ])
     await msg.edit_text(text, reply_markup=keyboard)
+
+
+# ── Question handler ──────────────────────────────────────────────────────────
+
+async def _handle_question(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, question: str
+) -> None:
+    """Answer a free-form question using the knowledge base."""
+    msg = await update.message.reply_text("🔍 Ищу в базе знаний...")
+
+    sources = search_for_question(question, max_files=5)
+
+    if not sources:
+        await msg.edit_text(
+            "🤷 По этой теме пока ничего не собрано.\n"
+            "Попробуй уточнить запрос или скинь мне ссылку на материал по этой теме."
+        )
+        return
+
+    answer = answer_question(question, sources)
+
+    if not answer:
+        await msg.edit_text("⚠️ Не удалось сформировать ответ. Попробуй позже.")
+        return
+
+    # Build sources footer
+    source_lines: list[str] = []
+    for i, src in enumerate(sources, 1):
+        type_icon = "📺" if src.get("type") == "youtube_video" else "📰"
+        title = src.get("title", "?")
+        source_name = src.get("source", src.get("sitename", "?"))
+        date = src.get("date", "?")
+        source_lines.append(f"{i}. {type_icon} {title} — {source_name}, {date}")
+
+    text = (
+        f"🧠 На основе {len(sources)} источников:\n\n"
+        f"{answer}\n\n"
+        f"📚 Источники:\n" + "\n".join(source_lines)
+    )
+
+    # Telegram message limit is 4096 chars
+    if len(text) > 4096:
+        text = text[:4090] + "\n..."
+
+    await msg.edit_text(text)
 
 
 # ── Inline keyboard callbacks ────────────────────────────────────────────────

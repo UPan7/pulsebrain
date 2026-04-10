@@ -344,6 +344,127 @@ def get_recent_entries(count: int = 5) -> list[dict[str, str]]:
     return entries[:count]
 
 
+def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
+    """Find relevant entries for a free-form question.
+
+    Returns up to *max_files* results, each containing extracted sections
+    (Summary, Key Insights, Detailed Notes) trimmed to fit context limits.
+
+    Ranking: keyword score * recency bonus * relevance score.
+    """
+    query_lower = query.lower()
+    scored: list[tuple[float, Path]] = []
+
+    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
+        if md_file.name == "_index.md":
+            continue
+
+        try:
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        content_lower = content.lower()
+        keyword_score = 0
+        for word in query_lower.split():
+            first_line = content.split("\n", 1)[0].lower()
+            if word in first_line:
+                keyword_score += 10
+            keyword_score += content_lower.count(word)
+
+        if keyword_score == 0:
+            continue
+
+        # Parse metadata for bonus multipliers
+        info = _parse_entry_metadata(md_file)
+        if not info:
+            continue
+
+        # Recency bonus: entries from last 30 days get up to 2x
+        recency_bonus = 1.0
+        entry_date = info.get("date", "")
+        if entry_date:
+            try:
+                days_ago = (datetime.now(timezone.utc) -
+                            datetime.strptime(entry_date[:10], "%Y-%m-%d").replace(
+                                tzinfo=timezone.utc)).days
+                if days_ago < 30:
+                    recency_bonus = 1.0 + (30 - days_ago) / 30.0
+            except ValueError:
+                pass
+
+        # Relevance score bonus
+        rel_bonus = 1.0
+        try:
+            rel_bonus = 1.0 + int(info.get("relevance", "5").strip()) / 10.0
+        except ValueError:
+            pass
+
+        final_score = keyword_score * recency_bonus * rel_bonus
+        scored.append((final_score, md_file))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top_files = [path for _, path in scored[:max_files]]
+
+    results: list[dict[str, str]] = []
+    total_chars = 0
+    max_total_chars = 40_000  # ~10K tokens
+
+    for md_file in top_files:
+        try:
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        info = _parse_entry_metadata(md_file) or {}
+        extracted = _extract_sections(content, compact=(total_chars > max_total_chars // 2))
+
+        info["extracted_text"] = extracted
+        results.append(info)
+        total_chars += len(extracted)
+
+    # If total context is way too large, re-extract with summary-only
+    if total_chars > max_total_chars:
+        for entry in results:
+            path = entry.get("path", "")
+            if not path:
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                entry["extracted_text"] = _extract_sections(content, compact=True)
+            except OSError:
+                pass
+
+    return results
+
+
+def _extract_sections(content: str, compact: bool = False) -> str:
+    """Extract Summary + Key Insights + Detailed Notes from a .md file.
+
+    If *compact* is True, only extract Summary (for token budget).
+    """
+    sections: list[str] = []
+
+    for section_name in ["## Summary", "## Key Insights", "## Detailed Notes"]:
+        if compact and section_name != "## Summary":
+            break
+        start = content.find(section_name)
+        if start == -1:
+            continue
+        # Find the next ## heading or end of file
+        next_heading = content.find("\n## ", start + len(section_name))
+        if next_heading == -1:
+            section_text = content[start:]
+        else:
+            section_text = content[start:next_heading]
+        sections.append(section_text.strip())
+
+    return "\n\n".join(sections) if sections else content[:1000]
+
+
 def get_stats() -> dict[str, Any]:
     """Collect knowledge base statistics."""
     entries: list[dict[str, str]] = []

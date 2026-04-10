@@ -99,3 +99,52 @@ def summarize_content(
             return None
 
     return None
+
+
+# ── Question answering ───────────────────────────────────────────────────────
+
+QUESTION_SYSTEM_PROMPT = """\
+You are a knowledge assistant. Answer the user's question based ONLY \
+on the provided sources from their personal knowledge base. \
+If the sources don't contain relevant information, say so honestly.
+Always cite which source each insight comes from.
+Answer in Russian."""
+
+QUESTION_USER_PROMPT = """\
+Context from knowledge base:
+---
+{context}
+---
+
+User question: {question}"""
+
+
+def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
+    """Answer a free-form question using knowledge base sources."""
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    # Build context block from sources
+    context_parts: list[str] = []
+    for i, src in enumerate(sources, 1):
+        source_label = src.get("source", src.get("title", f"Source {i}"))
+        date = src.get("date", "?")
+        context_parts.append(
+            f"[Source {i}: {src.get('title', '?')} — {source_label}, {date}]\n"
+            f"{src.get('extracted_text', '')}"
+        )
+
+    context = "\n\n---\n\n".join(context_parts)
+
+    user_prompt = QUESTION_USER_PROMPT.format(context=context, question=question)
+
+    try:
+        message = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=2048,
+            system=QUESTION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception as exc:
+        logger.error("Question answering failed: %s", exc)
+        return None

@@ -53,7 +53,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
     await update.message.reply_text(
-        "👋 Pulse Bot запущен!\n\n"
+        "👋 PulseBrain запущен!\n\n"
         "Отправь мне ссылку на YouTube видео, статью или канал — "
         "я обработаю и сохраню в базу знаний.\n\n"
         "Используй /help для списка команд."
@@ -245,7 +245,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     active = sum(1 for ch in channels if ch.get("enabled", True))
 
     await update.message.reply_text(
-        "🤖 Pulse Bot Status\n\n"
+        "🤖 PulseBrain Status\n\n"
         f"📁 Записей: {stats['total']}\n"
         f"📺 Видео: {stats['videos']}\n"
         f"📰 Статей: {stats['articles']}\n"

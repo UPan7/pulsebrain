@@ -46,7 +46,7 @@ logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("pulse-bot")
+logger = logging.getLogger("pulsebrain")
 
 
 def load_channels() -> list[dict[str, Any]]:

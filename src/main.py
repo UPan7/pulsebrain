@@ -38,7 +38,7 @@ def _ensure_directories() -> None:
 
 def main() -> None:
     """Start the bot."""
-    logger.info("Starting Pulse Bot...")
+    logger.info("Starting PulseBrain...")
 
     _validate_config()
     _ensure_directories()

@@ -1,4 +1,4 @@
-# Pulse Bot
+# PulseBrain
 
 Personal knowledge aggregation bot managed via Telegram. Monitors YouTube channels on schedule and processes manually dropped links (YouTube videos, blog posts, articles).
 

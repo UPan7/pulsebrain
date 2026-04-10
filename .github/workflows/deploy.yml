@@ -8,7 +8,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to server
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy source files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 91.99.143.15
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "src/,requirements.txt,Dockerfile,docker-compose.yml"
+          target: /root/pulse-bot/
+
+      - name: Rebuild and restart container
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 91.99.143.15
@@ -16,7 +28,6 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd /root/pulse-bot
-            git pull origin main
             docker compose build --no-cache
             docker compose up -d
             docker image prune -f

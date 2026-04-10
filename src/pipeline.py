@@ -42,7 +42,6 @@ def process_youtube_video(
     # Get transcript
     transcript = get_transcript(video_id)
     if not transcript:
-        mark_processed(content_id, status="no_transcript")
         return {"error": f"Транскрипт недоступен для: {title}"}
 
     # Summarize

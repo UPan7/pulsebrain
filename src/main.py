@@ -6,9 +6,9 @@ import asyncio
 import logging
 
 from src.config import (
-    ANTHROPIC_API_KEY,
     DATA_DIR,
     KNOWLEDGE_DIR,
+    OPENROUTER_API_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     logger,
@@ -22,8 +22,8 @@ def _validate_config() -> None:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not TELEGRAM_CHAT_ID:
         missing.append("TELEGRAM_CHAT_ID")
-    if not ANTHROPIC_API_KEY:
-        missing.append("ANTHROPIC_API_KEY")
+    if not OPENROUTER_API_KEY:
+        missing.append("OPENROUTER_API_KEY")
     if missing:
         raise RuntimeError(
             f"Missing required environment variables: {', '.join(missing)}"

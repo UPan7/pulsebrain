@@ -1,4 +1,4 @@
-"""Claude API summarization of content."""
+"""LLM summarization of content via OpenRouter."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ import json
 import logging
 from typing import Any
 
-import anthropic
+import openai
 
-from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from src.config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
 
 logger = logging.getLogger(__name__)
+
+
+def _client() -> openai.OpenAI:
+    return openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
 
 SUMMARIZE_PROMPT = """\
 You are a tech knowledge curator for a senior IT consultant and DevOps engineer
@@ -56,8 +60,8 @@ def summarize_content(
     category: str = "auto-detect",
     date: str | None = None,
 ) -> dict[str, Any] | None:
-    """Send content to Claude API and get structured summary back."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    """Send content to LLM via OpenRouter and get structured summary back."""
+    client = _client()
 
     # Truncate content to ~100k chars to stay within context limits
     max_content_len = 100_000
@@ -75,20 +79,20 @@ def summarize_content(
 
     for attempt in range(2):
         try:
-            message = client.messages.create(
-                model=CLAUDE_MODEL,
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = message.content[0].text.strip()
+            raw = response.choices[0].message.content.strip()
             return json.loads(raw)
         except json.JSONDecodeError as exc:
             logger.warning("JSON parse error on attempt %d: %s", attempt + 1, exc)
             if attempt == 0:
                 continue
             return None
-        except anthropic.APIError as exc:
-            logger.error("Claude API error on attempt %d: %s", attempt + 1, exc)
+        except openai.APIError as exc:
+            logger.error("OpenRouter API error on attempt %d: %s", attempt + 1, exc)
             if attempt == 0:
                 import time
                 time.sleep(5)
@@ -121,7 +125,7 @@ User question: {question}"""
 
 def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
     """Answer a free-form question using knowledge base sources."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = _client()
 
     # Build context block from sources
     context_parts: list[str] = []
@@ -138,13 +142,15 @@ def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
     user_prompt = QUESTION_USER_PROMPT.format(context=context, question=question)
 
     try:
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
             max_tokens=2048,
-            system=QUESTION_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=[
+                {"role": "system", "content": QUESTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
         )
-        return message.content[0].text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as exc:
         logger.error("Question answering failed: %s", exc)
         return None

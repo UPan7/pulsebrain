@@ -8,7 +8,7 @@ Personal knowledge aggregation bot managed via Telegram. Monitors YouTube channe
 - Telegram bot via python-telegram-bot
 - YouTube transcripts via youtube-transcript-api
 - Web articles via trafilatura
-- Summarization via Claude API (claude-sonnet-4-20250514)
+- Summarization via OpenRouter (openai/gpt-5.4-nano)
 - Scheduling via APScheduler
 - Storage: Markdown files in knowledge/ volume
 - Docker on Hetzner CAX21 (ARM64)

@@ -1,12 +1,12 @@
-"""Auto-categorization of content via Claude API."""
+"""Auto-categorization of content via OpenRouter LLM."""
 
 from __future__ import annotations
 
 import logging
 
-import anthropic
+import openai
 
-from src.config import ANTHROPIC_API_KEY, CATEGORIES, CLAUDE_MODEL
+from src.config import CATEGORIES, LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ Respond with ONLY the category slug, nothing else."""
 
 def categorize_content(title: str, content: str) -> str:
     """Determine the best category for content. Returns a category slug."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
 
     prompt = CATEGORIZE_PROMPT.format(
         title=title,
@@ -38,12 +38,12 @@ def categorize_content(title: str, content: str) -> str:
     )
 
     try:
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
             max_tokens=50,
             messages=[{"role": "user", "content": prompt}],
         )
-        slug = message.content[0].text.strip().lower().replace(" ", "-")
+        slug = response.choices[0].message.content.strip().lower().replace(" ", "-")
         # Validate it's a known category or a reasonable slug
         if slug in CATEGORIES or (len(slug) <= 30 and slug.replace("-", "").isalnum()):
             return slug

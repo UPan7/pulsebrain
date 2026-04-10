@@ -17,7 +17,7 @@ CHANNELS_FILE = BASE_DIR / "channels.yml"
 PROCESSED_FILE = DATA_DIR / "processed.json"
 
 # ── Environment ──────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
+OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
 TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: int = int(os.environ.get("TELEGRAM_CHAT_ID", "0"))
 CHECK_INTERVAL_MINUTES: int = int(os.environ.get("CHECK_INTERVAL_MINUTES", "30"))
@@ -26,8 +26,9 @@ TRANSCRIPT_LANGUAGES: list[str] = os.environ.get(
     "TRANSCRIPT_LANGUAGES", "en,de,ru"
 ).split(",")
 
-# ── Claude model ─────────────────────────────────────────────────────────────
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+# ── LLM model (OpenRouter) ──────────────────────────────────────────────────
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_MODEL = "openai/gpt-5.4-nano"
 
 # ── Categories ───────────────────────────────────────────────────────────────
 CATEGORIES: dict[str, str] = {

@@ -1,0 +1,25 @@
+channels:
+  - name: "Cole Medin"
+    id: "UCmHzpwaNEMgz2Do3IfJbXzg"
+    category: "ai-agents"
+    enabled: true
+
+  - name: "Fireship"
+    id: "UCsBjURrPoezykLs9EqgamOA"
+    category: "ai-news"
+    enabled: true
+
+  - name: "NetworkChuck"
+    id: "UC9-y-6csu5WGm29I7JiwpnA"
+    category: "devops"
+    enabled: true
+
+  - name: "Matt Wolfe"
+    id: "UCJMt29JnFMDiElsSQEYRAcA"
+    category: "ai-news"
+    enabled: true
+
+  - name: "All About AI"
+    id: "UC0Bn-1QJUA2l2GIh7r0VXsQ"
+    category: "ai-agents"
+    enabled: true

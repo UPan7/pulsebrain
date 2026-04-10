@@ -9,6 +9,7 @@ services:
       - ./knowledge:/app/knowledge
       - ./data:/app/data
       - ./channels.yml:/app/channels.yml
+      - ./cookies.txt:/app/cookies.txt
     logging:
       driver: json-file
       options:

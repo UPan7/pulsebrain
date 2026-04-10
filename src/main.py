@@ -46,10 +46,16 @@ def main() -> None:
     from src.scheduler import setup_scheduler
     from src.telegram_bot import create_bot_application
 
-    app = create_bot_application()
+    # Scheduler is configured here but started only after the event loop is running
+    scheduler_holder: list = []
 
-    # Set up scheduler after app is ready
-    scheduler = setup_scheduler(app)
+    async def post_init(application) -> None:
+        scheduler = setup_scheduler(application)
+        scheduler.start()
+        scheduler_holder.append(scheduler)
+        logger.info("Scheduler started.")
+
+    app = create_bot_application(post_init=post_init)
 
     logger.info("Bot is running. Waiting for messages...")
     app.run_polling(drop_pending_updates=True)

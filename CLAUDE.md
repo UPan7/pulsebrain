@@ -6,7 +6,7 @@ Personal knowledge aggregation bot managed via Telegram. Monitors YouTube channe
 
 - Python 3.11+, type hints everywhere
 - Telegram bot via python-telegram-bot
-- YouTube transcripts via youtube-transcript-api
+- YouTube transcripts via yt-dlp (subtitle download, VTT parsing)
 - Web articles via trafilatura
 - Summarization via OpenRouter (openai/gpt-5.4-nano)
 - Scheduling via APScheduler

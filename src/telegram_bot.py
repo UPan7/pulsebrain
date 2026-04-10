@@ -619,9 +619,12 @@ async def send_error_notification(app: Application, title: str, error: str) -> N
 
 # ── Bot setup ────────────────────────────────────────────────────────────────
 
-def create_bot_application() -> Application:
+def create_bot_application(post_init=None) -> Application:
     """Create and configure the Telegram bot application."""
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+    if post_init is not None:
+        builder = builder.post_init(post_init)
+    app = builder.build()
 
     # Commands
     app.add_handler(CommandHandler("start", cmd_start))

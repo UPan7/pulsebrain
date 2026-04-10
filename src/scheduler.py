@@ -113,9 +113,8 @@ def setup_scheduler(app) -> None:
         replace_existing=True,
     )
 
-    scheduler.start()
     logger.info(
-        "Scheduler started — checking every %d minutes", CHECK_INTERVAL_MINUTES
+        "Scheduler configured — will check every %d minutes", CHECK_INTERVAL_MINUTES
     )
 
     return scheduler

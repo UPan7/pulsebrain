@@ -28,3 +28,7 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Cookies (sensitive — never commit)
+cookies.txt
+*.cookies.txt

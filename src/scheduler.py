@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 import feedparser
 
@@ -64,23 +63,18 @@ async def run_channel_check() -> int:
 
             logger.info("Processing new video: %s", video["title"])
 
-            result = process_youtube_video(video["url"], category=category)
+            result = await asyncio.to_thread(
+                process_youtube_video, video["url"], category=category
+            )
             if result and "error" not in result:
                 total_processed += 1
-                # Send notification via Telegram
-                try:
-                    from src.telegram_bot import send_notification
-                    # Notification will be sent by the scheduler callback
-                    result["_notify"] = True
-                except ImportError:
-                    pass
             elif result and "error" in result:
                 logger.warning(
                     "Failed to process %s: %s", video["title"], result["error"]
                 )
 
             # Rate limiting: 3-second delay between YouTube requests
-            time.sleep(3)
+            await asyncio.sleep(3)
 
     logger.info("Channel check complete. Processed %d new videos.", total_processed)
     return total_processed

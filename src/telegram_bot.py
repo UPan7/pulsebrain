@@ -577,16 +577,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         keyboard = _category_keyboard("recat")
         await query.edit_message_reply_markup(reply_markup=keyboard)
 
-    elif data.startswith("recat:"):
-        new_category = data.split(":", 1)[1]
-        # TODO: Re-save the last entry with new category
-        # For now, acknowledge the change
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(
-            f"📂 Категория изменена на: {new_category}\n"
-            "(Файл будет перемещён при следующей обработке)"
-        )
-
     elif data.startswith("add_channel:__new__") or data.startswith("recat:__new__"):
         # User wants to create a new category — ask for slug
         action = "add_channel" if data.startswith("add_channel") else "recat"
@@ -596,6 +586,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "✏️ Введи slug новой категории (например: `machine-learning`).\n"
             "Можно через пробел добавить описание:\n"
             "`machine-learning Machine Learning & Deep Learning`"
+        )
+
+    elif data.startswith("recat:"):
+        new_category = data.split(":", 1)[1]
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            f"📂 Категория изменена на: {new_category}\n"
+            "(Файл будет перемещён при следующей обработке)"
         )
 
     elif data.startswith("add_channel:"):

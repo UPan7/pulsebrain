@@ -48,24 +48,29 @@ def _make_proxy_config() -> GenericProxyConfig | None:
 # ── Transcript via youtube-transcript-api ───────────────────────────────────
 
 
+_MAX_RETRIES = 3
+
+
 def get_transcript(video_id: str, languages: list[str] | None = None) -> str | None:
     """Fetch transcript for a YouTube video via youtube-transcript-api.
 
-    Uses rotating residential proxies. Returns plain text.
+    Uses rotating residential proxies with retries on failure.
     """
     if languages is None:
         languages = TRANSCRIPT_LANGUAGES
 
-    proxy_config = _make_proxy_config()
-    api = YouTubeTranscriptApi(proxy_config=proxy_config) if proxy_config else YouTubeTranscriptApi()
-
-    try:
-        transcript = api.fetch(video_id, languages=languages)
-        text = " ".join(snippet.text for snippet in transcript)
-        return text if text.strip() else None
-    except Exception as exc:
-        logger.warning("No transcript available for %s: %s", video_id, exc)
-        return None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        proxy_config = _make_proxy_config()
+        api = YouTubeTranscriptApi(proxy_config=proxy_config) if proxy_config else YouTubeTranscriptApi()
+        try:
+            transcript = api.fetch(video_id, languages=languages)
+            text = " ".join(snippet.text for snippet in transcript)
+            return text if text.strip() else None
+        except Exception as exc:
+            logger.debug("Transcript attempt %d/%d failed for %s: %s", attempt, _MAX_RETRIES, video_id, exc)
+            if attempt == _MAX_RETRIES:
+                logger.warning("No transcript available for %s after %d attempts: %s", video_id, _MAX_RETRIES, exc)
+                return None
 
 
 def get_video_metadata(video_id: str) -> dict[str, str | None]:

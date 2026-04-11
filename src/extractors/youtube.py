@@ -1,21 +1,19 @@
-"""YouTube transcript and metadata extraction via yt-dlp + youtube-transcript-api."""
+"""YouTube transcript and metadata extraction via proxied HTTP + youtube-transcript-api."""
 
 from __future__ import annotations
 
 import logging
 import random
-import subprocess
+import re
 
+import feedparser
+import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig
 
 from src.config import PROXY_CREDENTIALS_FILE, TRANSCRIPT_LANGUAGES
 
 logger = logging.getLogger(__name__)
-
-_COOKIES_PATH = "/app/cookies.txt"
-
-_BASE_YTDLP = ["yt-dlp", "--cookies", _COOKIES_PATH]
 
 # ── Proxy helpers ───────────────────────────────────────────────────────────
 
@@ -43,6 +41,16 @@ def _make_proxy_config() -> GenericProxyConfig | None:
     cred_line = random.choice(lines)  # user:pass@host:port
     proxy_url = f"http://{cred_line}"
     return GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+
+
+def _get_random_proxy_dict() -> dict[str, str] | None:
+    """Return a requests-compatible proxy dict with a random credential."""
+    lines = _load_proxy_lines()
+    if not lines:
+        return None
+    cred_line = random.choice(lines)
+    proxy_url = f"http://{cred_line}"
+    return {"http": proxy_url, "https": proxy_url}
 
 
 # ── Transcript via youtube-transcript-api ───────────────────────────────────
@@ -74,32 +82,19 @@ def get_transcript(video_id: str, languages: list[str] | None = None) -> str | N
 
 
 def get_video_metadata(video_id: str) -> dict[str, str | None]:
-    """Fetch video title, channel name, and upload date via yt-dlp."""
+    """Fetch video title, channel name, and upload date via oEmbed API."""
     try:
-        result = subprocess.run(
-            [
-                *_BASE_YTDLP,
-                "--skip-download",
-                "--no-check-formats",
-                "--ignore-no-formats-error",
-                "--print", "%(title)s",
-                "--print", "%(channel)s",
-                "--print", "%(upload_date)s",
-                f"https://www.youtube.com/watch?v={video_id}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        resp = requests.get(
+            "https://www.youtube.com/oembed",
+            params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
+            timeout=15,
         )
-        lines = result.stdout.strip().split("\n")
-        if len(lines) >= 3 and lines[0] not in ("", "NA"):
-            upload_date = lines[2]
-            if len(upload_date) == 8:
-                upload_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
+        if resp.status_code == 200:
+            data = resp.json()
             return {
-                "title": lines[0],
-                "channel": lines[1],
-                "upload_date": upload_date,
+                "title": data.get("title"),
+                "channel": data.get("author_name"),
+                "upload_date": None,
             }
     except Exception as exc:
         logger.warning("Failed to get metadata for %s: %s", video_id, exc)
@@ -108,24 +103,39 @@ def get_video_metadata(video_id: str) -> dict[str, str | None]:
 
 
 def resolve_channel_id(url: str) -> tuple[str | None, str | None]:
-    """Resolve a YouTube channel URL to (channel_id, channel_name) via yt-dlp."""
+    """Resolve a YouTube channel URL to (channel_id, channel_name) via page scraping."""
+    # Normalize: add @ if missing for handle-style URLs
+    normalized = url.rstrip("/")
+    if re.search(r"youtube\.com/[^@/]+$", normalized):
+        handle = normalized.rsplit("/", 1)[-1]
+        normalized = f"https://www.youtube.com/@{handle}"
+
+    proxies = _get_random_proxy_dict()
     try:
-        result = subprocess.run(
-            [
-                *_BASE_YTDLP,
-                "--skip-download",
-                "--print", "%(channel_id)s",
-                "--print", "%(channel)s",
-                "--playlist-items", "1",
-                url,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        resp = requests.get(
+            normalized,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            proxies=proxies,
+            timeout=15,
         )
-        lines = result.stdout.strip().split("\n")
-        if len(lines) >= 2 and lines[0] not in ("", "NA"):
-            return lines[0], lines[1]
+        html = resp.text
+
+        # Extract channel ID from meta tag or canonical link
+        cid_match = re.search(r'"externalId"\s*:\s*"(UC[\w-]+)"', html)
+        if not cid_match:
+            cid_match = re.search(r'channel_id=(UC[\w-]+)', html)
+        if not cid_match:
+            cid_match = re.search(r'"channelId"\s*:\s*"(UC[\w-]+)"', html)
+
+        # Extract channel name
+        name_match = re.search(r'"author"\s*:\s*"([^"]+)"', html)
+        if not name_match:
+            name_match = re.search(r'<title>([^<]+)</title>', html)
+
+        if cid_match:
+            channel_id = cid_match.group(1)
+            channel_name = name_match.group(1).replace(" - YouTube", "").strip() if name_match else None
+            return channel_id, channel_name
     except Exception as exc:
         logger.warning("Failed to resolve channel %s: %s", url, exc)
 
@@ -133,21 +143,15 @@ def resolve_channel_id(url: str) -> tuple[str | None, str | None]:
 
 
 def get_recent_video_ids(channel_id: str, count: int = 3) -> list[str]:
-    """Get the most recent video IDs from a channel."""
+    """Get the most recent video IDs from a channel via RSS feed."""
+    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
     try:
-        result = subprocess.run(
-            [
-                *_BASE_YTDLP,
-                "--skip-download",
-                "--print", "%(id)s",
-                "--playlist-items", f"1:{count}",
-                f"https://www.youtube.com/channel/{channel_id}/videos",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        ids = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+        feed = feedparser.parse(url)
+        ids = []
+        for entry in feed.entries[:count]:
+            vid = entry.get("yt_videoid", "")
+            if vid:
+                ids.append(vid)
         return ids
     except Exception as exc:
         logger.warning("Failed to get recent videos for %s: %s", channel_id, exc)

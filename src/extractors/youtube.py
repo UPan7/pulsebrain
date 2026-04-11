@@ -1,15 +1,15 @@
-"""YouTube transcript and metadata extraction via yt-dlp."""
+"""YouTube transcript and metadata extraction via yt-dlp + youtube-transcript-api."""
 
 from __future__ import annotations
 
-import glob as glob_module
 import logging
-import os
-import re
+import random
 import subprocess
-import tempfile
 
-from src.config import TRANSCRIPT_LANGUAGES
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import GenericProxyConfig
+
+from src.config import PROXY_CREDENTIALS_FILE, TRANSCRIPT_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -17,71 +17,55 @@ _COOKIES_PATH = "/app/cookies.txt"
 
 _BASE_YTDLP = ["yt-dlp", "--cookies", _COOKIES_PATH]
 
+# ── Proxy helpers ───────────────────────────────────────────────────────────
 
-def _parse_vtt(filepath: str) -> str | None:
-    """Parse a VTT subtitle file and return deduplicated plain text."""
-    with open(filepath, encoding="utf-8") as f:
-        content = f.read()
+_proxy_lines: list[str] = []
 
-    text_lines = []
-    for line in content.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("WEBVTT") or line.startswith("NOTE") or "-->" in line:
-            continue
-        if re.match(r"^\d+$", line):
-            continue
-        line = re.sub(r"<[^>]+>", "", line)
-        if line:
-            text_lines.append(line)
 
-    # Deduplicate consecutive identical lines (VTT repeats overlap lines)
-    deduped: list[str] = []
-    for line in text_lines:
-        if not deduped or deduped[-1] != line:
-            deduped.append(line)
+def _load_proxy_lines() -> list[str]:
+    """Load and cache proxy credential lines from file."""
+    global _proxy_lines
+    if _proxy_lines:
+        return _proxy_lines
+    try:
+        text = PROXY_CREDENTIALS_FILE.read_text(encoding="utf-8").strip()
+        _proxy_lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    except FileNotFoundError:
+        logger.warning("Proxy credentials file not found: %s", PROXY_CREDENTIALS_FILE)
+    return _proxy_lines
 
-    return " ".join(deduped) if deduped else None
+
+def _make_proxy_config() -> GenericProxyConfig | None:
+    """Build a GenericProxyConfig using a random proxy credential line."""
+    lines = _load_proxy_lines()
+    if not lines:
+        return None
+    cred_line = random.choice(lines)  # user:pass@host:port
+    proxy_url = f"http://{cred_line}"
+    return GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+
+
+# ── Transcript via youtube-transcript-api ───────────────────────────────────
 
 
 def get_transcript(video_id: str, languages: list[str] | None = None) -> str | None:
-    """Fetch transcript for a YouTube video via yt-dlp.
+    """Fetch transcript for a YouTube video via youtube-transcript-api.
 
-    Tries manual subtitles first, then auto-generated.
-    Returns plain text with timestamps stripped.
+    Uses rotating residential proxies. Returns plain text.
     """
     if languages is None:
         languages = TRANSCRIPT_LANGUAGES
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    lang_str = ",".join(languages)
+    proxy_config = _make_proxy_config()
+    api = YouTubeTranscriptApi(proxy_config=proxy_config) if proxy_config else YouTubeTranscriptApi()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_tmpl = os.path.join(tmpdir, "%(id)s")
-        for sub_flags in [["--write-subs"], ["--write-auto-subs"]]:
-            cmd = [
-                *_BASE_YTDLP,
-                "--skip-download",
-                "--no-check-formats",
-                "--ignore-errors",
-                "--ignore-no-formats-error",
-                *sub_flags,
-                "--sub-langs", lang_str,
-                "--sub-format", "vtt",
-                "-o", out_tmpl,
-                url,
-            ]
-            try:
-                subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                files = glob_module.glob(os.path.join(tmpdir, "*.vtt"))
-                if files:
-                    text = _parse_vtt(files[0])
-                    if text:
-                        return text
-            except Exception as exc:
-                logger.debug("yt-dlp sub attempt failed for %s: %s", video_id, exc)
-
-    logger.warning("No transcript available for %s", video_id)
-    return None
+    try:
+        transcript = api.fetch(video_id, languages=languages)
+        text = " ".join(snippet.text for snippet in transcript)
+        return text if text.strip() else None
+    except Exception as exc:
+        logger.warning("No transcript available for %s: %s", video_id, exc)
+        return None
 
 
 def get_video_metadata(video_id: str) -> dict[str, str | None]:

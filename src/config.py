@@ -26,6 +26,9 @@ TRANSCRIPT_LANGUAGES: list[str] = os.environ.get(
     "TRANSCRIPT_LANGUAGES", "en,de,ru"
 ).split(",")
 
+# ── Proxy (rotating residential) ────────────────────────────────────────────
+PROXY_CREDENTIALS_FILE = BASE_DIR / "proxy-credentials"
+
 # ── LLM model (OpenRouter) ──────────────────────────────────────────────────
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "openai/gpt-5.4-nano"

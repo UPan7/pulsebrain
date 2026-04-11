@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -46,28 +47,32 @@ _DEFAULT_CATEGORIES: dict[str, str] = {
 
 CATEGORIES_FILE = DATA_DIR / "categories.yml"
 
+_categories_lock = threading.Lock()
+
 
 def load_categories() -> dict[str, str]:
     """Load categories: defaults + user-added from categories.yml."""
-    cats = dict(_DEFAULT_CATEGORIES)
-    if CATEGORIES_FILE.exists():
-        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
-            custom = yaml.safe_load(f) or {}
-        cats.update(custom)
-    return cats
+    with _categories_lock:
+        cats = dict(_DEFAULT_CATEGORIES)
+        if CATEGORIES_FILE.exists():
+            with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+                custom = yaml.safe_load(f) or {}
+            cats.update(custom)
+        return cats
 
 
 def add_category(slug: str, description: str) -> None:
     """Add a new category and persist it."""
     global CATEGORIES
-    existing: dict[str, str] = {}
-    if CATEGORIES_FILE.exists():
-        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
-            existing = yaml.safe_load(f) or {}
-    existing[slug] = description
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CATEGORIES_FILE, "w", encoding="utf-8") as f:
-        yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
+    with _categories_lock:
+        existing: dict[str, str] = {}
+        if CATEGORIES_FILE.exists():
+            with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+                existing = yaml.safe_load(f) or {}
+        existing[slug] = description
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CATEGORIES_FILE, "w", encoding="utf-8") as f:
+            yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
     CATEGORIES = load_categories()
 
 

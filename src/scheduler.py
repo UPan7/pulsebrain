@@ -45,17 +45,20 @@ async def run_channel_check() -> int:
     channels = load_channels()
     total_processed = 0
 
-    for channel in channels:
+    # Phase 1: Parallel RSS fetches (I/O-bound, safe to parallelize)
+    async def _fetch_one(channel):
         if not channel.get("enabled", True):
-            continue
+            return channel, []
+        videos = await asyncio.to_thread(fetch_channel_videos, channel["id"])
+        return channel, videos
 
-        channel_id = channel["id"]
-        channel_name = channel["name"]
+    results = await asyncio.gather(*[_fetch_one(ch) for ch in channels])
+
+    # Phase 2: Sequential video processing (respects rate limits)
+    for channel, videos in results:
         category = channel.get("category")
+        channel_name = channel["name"]
 
-        logger.info("Checking channel: %s (%s)", channel_name, channel_id)
-
-        videos = fetch_channel_videos(channel_id)
         for video in videos:
             content_id = make_content_id("youtube_video", video["video_id"])
             if is_processed(content_id):
@@ -64,7 +67,10 @@ async def run_channel_check() -> int:
             logger.info("Processing new video: %s", video["title"])
 
             result = await asyncio.to_thread(
-                process_youtube_video, video["url"], category=category
+                process_youtube_video,
+                video["url"],
+                category=category,
+                upload_date=video.get("published"),
             )
             if result and "error" not in result:
                 total_processed += 1

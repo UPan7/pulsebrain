@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import random
 import re
+import time
 
 import feedparser
 import requests
@@ -79,6 +80,8 @@ def get_transcript(video_id: str, languages: list[str] | None = None) -> str | N
             if attempt == _MAX_RETRIES:
                 logger.warning("No transcript available for %s after %d attempts: %s", video_id, _MAX_RETRIES, exc)
                 return None
+            # Exponential backoff: 1s, 2s
+            time.sleep(2 ** (attempt - 1))
 
 
 def get_video_metadata(video_id: str) -> dict[str, str | None]:

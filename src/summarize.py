@@ -94,8 +94,6 @@ def summarize_content(
         except openai.APIError as exc:
             logger.error("OpenRouter API error on attempt %d: %s", attempt + 1, exc)
             if attempt == 0:
-                import time
-                time.sleep(5)
                 continue
             return None
         except Exception as exc:

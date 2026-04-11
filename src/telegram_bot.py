@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -35,6 +36,16 @@ logger = logging.getLogger(__name__)
 
 # URL regex for detecting links in messages
 URL_PATTERN = re.compile(r"https?://\S+")
+
+# Telegram message size limit
+_TELEGRAM_MSG_LIMIT = 4096
+
+
+def _truncate_message(text: str, limit: int = _TELEGRAM_MSG_LIMIT) -> str:
+    """Truncate message text to fit Telegram's message size limit."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 # ── Security: chat ID filter ────────────────────────────────────────────────
@@ -337,7 +348,7 @@ async def _handle_youtube_video(
 ) -> None:
     msg = await update.message.reply_text("⏳ Обрабатываю видео...")
 
-    result = process_youtube_video(url)
+    result = await asyncio.to_thread(process_youtube_video, url)
     if not result:
         await msg.edit_text("⚠️ Произошла неизвестная ошибка.")
         return
@@ -373,7 +384,7 @@ async def _handle_youtube_video(
             InlineKeyboardButton("🔄 Изменить", callback_data="cat_change"),
         ]
     ])
-    await msg.edit_text(text, reply_markup=keyboard)
+    await msg.edit_text(_truncate_message(text), reply_markup=keyboard)
 
 
 async def _handle_youtube_channel(
@@ -412,7 +423,7 @@ async def _handle_web_article(
 ) -> None:
     msg = await update.message.reply_text("⏳ Читаю статью...")
 
-    result = process_web_article(url)
+    result = await asyncio.to_thread(process_web_article, url)
     if not result:
         await msg.edit_text("⚠️ Произошла неизвестная ошибка.")
         return
@@ -450,7 +461,7 @@ async def _handle_web_article(
             InlineKeyboardButton("🔄 Изменить", callback_data="cat_change"),
         ]
     ])
-    await msg.edit_text(text, reply_markup=keyboard)
+    await msg.edit_text(_truncate_message(text), reply_markup=keyboard)
 
 
 # ── Question handler ──────────────────────────────────────────────────────────
@@ -491,11 +502,7 @@ async def _handle_question(
         f"📚 Источники:\n" + "\n".join(source_lines)
     )
 
-    # Telegram message limit is 4096 chars
-    if len(text) > 4096:
-        text = text[:4090] + "\n..."
-
-    await msg.edit_text(text)
+    await msg.edit_text(_truncate_message(text))
 
 
 # ── New category input handler ───────────────────────────────────────────────
@@ -651,11 +658,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text("⏳ Загружаю последние видео...")
 
-        video_ids = get_recent_video_ids(channel_id, count=3)
+        video_ids = await asyncio.to_thread(get_recent_video_ids, channel_id, 3)
         processed = 0
         for vid in video_ids:
             url = f"https://www.youtube.com/watch?v={vid}"
-            result = process_youtube_video(url, category=category)
+            result = await asyncio.to_thread(process_youtube_video, url, category)
             if result and "error" not in result:
                 processed += 1
 
@@ -695,7 +702,7 @@ async def send_notification(app: Application, result: dict[str, Any]) -> None:
             f"🔗 {result.get('source_url', '')}"
         )
 
-    await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+    await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=_truncate_message(text))
 
 
 async def send_error_notification(app: Application, title: str, error: str) -> None:

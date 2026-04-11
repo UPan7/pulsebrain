@@ -32,3 +32,6 @@ Thumbs.db
 # Cookies (sensitive — never commit)
 cookies.txt
 *.cookies.txt
+
+# Proxy credentials (sensitive)
+proxy-*-credentials

@@ -6,7 +6,9 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timezone
+import threading
+import time as _time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +19,14 @@ from src.config import DATA_DIR, KNOWLEDGE_DIR, PROCESSED_FILE
 logger = logging.getLogger(__name__)
 
 
-# ── Processed tracking ───────────────────────────────────────────────────────
+# ── Processed tracking (in-memory with Lock) ────────────────────────────────
 
-def _load_processed() -> dict[str, Any]:
+_processed_lock = threading.Lock()
+_processed_cache: dict[str, Any] | None = None
+
+
+def _load_processed_from_disk() -> dict[str, Any]:
+    """Read processed.json from disk (internal helper)."""
     if not PROCESSED_FILE.exists():
         return {}
     try:
@@ -29,25 +36,41 @@ def _load_processed() -> dict[str, Any]:
         return {}
 
 
-def _save_processed(data: dict[str, Any]) -> None:
+def _flush_processed() -> None:
+    """Atomically write _processed_cache to disk (caller must hold lock)."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp_path = PROCESSED_FILE.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(_processed_cache, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, PROCESSED_FILE)
+
+
+def init_processed() -> None:
+    """Load processed.json into memory. Call once at startup."""
+    global _processed_cache
+    with _processed_lock:
+        _processed_cache = _load_processed_from_disk()
 
 
 def is_processed(content_id: str) -> bool:
-    """Check if a content ID has already been processed."""
-    return content_id in _load_processed()
+    """Check if a content ID has already been processed (in-memory)."""
+    with _processed_lock:
+        if _processed_cache is None:
+            return content_id in _load_processed_from_disk()
+        return content_id in _processed_cache
 
 
 def mark_processed(content_id: str, status: str = "ok") -> None:
-    """Mark a content ID as processed."""
-    data = _load_processed()
-    data[content_id] = {
-        "status": status,
-        "processed_at": datetime.now(timezone.utc).isoformat(),
-    }
-    _save_processed(data)
+    """Mark a content ID as processed and flush to disk atomically."""
+    global _processed_cache
+    with _processed_lock:
+        if _processed_cache is None:
+            _processed_cache = _load_processed_from_disk()
+        _processed_cache[content_id] = {
+            "status": status,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _flush_processed()
 
 
 def make_content_id(source_type: str, identifier: str) -> str:
@@ -91,6 +114,12 @@ def _build_file_path(
 
 # ── Save markdown ────────────────────────────────────────────────────────────
 
+def _validate_category(category: str) -> None:
+    """Reject category slugs that could cause path traversal."""
+    if ".." in category or "/" in category or "\\" in category:
+        raise ValueError(f"Invalid category slug: {category!r}")
+
+
 def save_entry(
     title: str,
     source_url: str,
@@ -106,8 +135,10 @@ def save_entry(
     action_items: list[str],
     author: str | None = None,
     sitename: str | None = None,
+    update_index: bool = True,
 ) -> Path:
     """Save a knowledge entry as a .md file and update the index."""
+    _validate_category(category)
     file_path = _build_file_path(category, source_name, title, date_str)
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -159,8 +190,10 @@ def save_entry(
 
     logger.info("Saved entry: %s", file_path)
 
-    # Update index
-    _update_index()
+    _invalidate_entry_cache()
+
+    if update_index:
+        _update_index()
 
     return file_path
 
@@ -192,6 +225,7 @@ def move_entry(old_path: str, new_category: str) -> str | None:
 
     old.unlink()
     logger.info("Moved entry: %s -> %s", old_path, new_path)
+    _invalidate_entry_cache()
     _update_index()
     return str(new_path)
 
@@ -231,7 +265,7 @@ def _update_index() -> None:
     ]
 
     week_ago = (datetime.now(timezone.utc).replace(hour=0, minute=0, second=0) -
-                __import__("datetime").timedelta(days=7)).strftime("%Y-%m-%d")
+                timedelta(days=7)).strftime("%Y-%m-%d")
 
     for entry in entries:
         if entry.get("date", "") >= week_ago:
@@ -313,6 +347,40 @@ def _parse_entry_metadata(md_file: Path) -> dict[str, str] | None:
     return info
 
 
+# ── Entry cache (TTL-based) ──────────────────────────────────────────────────
+
+_entry_cache: list[dict[str, str]] | None = None
+_entry_cache_time: float = 0.0
+_ENTRY_CACHE_TTL: float = 60.0  # seconds
+
+
+def _get_all_entries() -> list[dict[str, str]]:
+    """Return all parsed entries, using cache if still valid."""
+    global _entry_cache, _entry_cache_time
+    now = _time.monotonic()
+    if _entry_cache is not None and (now - _entry_cache_time) < _ENTRY_CACHE_TTL:
+        return _entry_cache
+
+    entries: list[dict[str, str]] = []
+    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
+        if md_file.name == "_index.md":
+            continue
+        info = _parse_entry_metadata(md_file)
+        if info:
+            entries.append(info)
+
+    _entry_cache = entries
+    _entry_cache_time = now
+    return entries
+
+
+def _invalidate_entry_cache() -> None:
+    """Reset entry cache so next access re-scans."""
+    global _entry_cache, _entry_cache_time
+    _entry_cache = None
+    _entry_cache_time = 0.0
+
+
 # ── Search ───────────────────────────────────────────────────────────────────
 
 def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
@@ -363,14 +431,7 @@ def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
 
 def get_recent_entries(count: int = 5) -> list[dict[str, str]]:
     """Get the most recently added entries."""
-    entries: list[dict[str, str]] = []
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
-        if md_file.name == "_index.md":
-            continue
-        info = _parse_entry_metadata(md_file)
-        if info:
-            entries.append(info)
-
+    entries = list(_get_all_entries())
     entries.sort(key=lambda e: e.get("date", ""), reverse=True)
     return entries[:count]
 
@@ -498,13 +559,7 @@ def _extract_sections(content: str, compact: bool = False) -> str:
 
 def get_stats() -> dict[str, Any]:
     """Collect knowledge base statistics."""
-    entries: list[dict[str, str]] = []
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
-        if md_file.name == "_index.md":
-            continue
-        info = _parse_entry_metadata(md_file)
-        if info:
-            entries.append(info)
+    entries = list(_get_all_entries())
 
     total = len(entries)
     videos = sum(1 for e in entries if e.get("type") == "youtube_video")
@@ -515,7 +570,7 @@ def get_stats() -> dict[str, Any]:
     relevance_scores: list[int] = []
 
     week_ago = (datetime.now(timezone.utc) -
-                __import__("datetime").timedelta(days=7)).strftime("%Y-%m-%d")
+                timedelta(days=7)).strftime("%Y-%m-%d")
     this_week = 0
 
     for e in entries:

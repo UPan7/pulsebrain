@@ -34,7 +34,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "openai/gpt-5.4-nano"
 
 # ── Categories ───────────────────────────────────────────────────────────────
-CATEGORIES: dict[str, str] = {
+_DEFAULT_CATEGORIES: dict[str, str] = {
     "ai-agents": "AI Agents & Multi-Agent",
     "claude-code": "Claude Code & AI Dev",
     "wordpress": "WordPress & WooCommerce",
@@ -43,6 +43,35 @@ CATEGORIES: dict[str, str] = {
     "ai-news": "AI News & Releases",
     "business": "Business & Freelancing",
 }
+
+CATEGORIES_FILE = DATA_DIR / "categories.yml"
+
+
+def load_categories() -> dict[str, str]:
+    """Load categories: defaults + user-added from categories.yml."""
+    cats = dict(_DEFAULT_CATEGORIES)
+    if CATEGORIES_FILE.exists():
+        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+            custom = yaml.safe_load(f) or {}
+        cats.update(custom)
+    return cats
+
+
+def add_category(slug: str, description: str) -> None:
+    """Add a new category and persist it."""
+    global CATEGORIES
+    existing: dict[str, str] = {}
+    if CATEGORIES_FILE.exists():
+        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+            existing = yaml.safe_load(f) or {}
+    existing[slug] = description
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CATEGORIES_FILE, "w", encoding="utf-8") as f:
+        yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
+    CATEGORIES = load_categories()
+
+
+CATEGORIES: dict[str, str] = load_categories()
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(

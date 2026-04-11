@@ -18,9 +18,10 @@ from telegram.ext import (
 )
 
 from src.config import (
-    CATEGORIES,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+    add_category,
+    load_categories,
     load_channels,
     save_channels,
 )
@@ -121,7 +122,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(f"Канал {channel_name} уже отслеживается.")
             return
 
-    if category and category in CATEGORIES:
+    if category:
         # Add directly
         channels.append({
             "name": channel_name,
@@ -174,9 +175,10 @@ async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _authorized(update):
         return
     stats = get_stats()
+    categories = load_categories()
     lines = ["📂 Категории:\n"]
     for cat, count in stats["by_category"].items():
-        name = CATEGORIES.get(cat, cat)
+        name = categories.get(cat, cat)
         lines.append(f"• {cat}: {count} записей — {name}")
 
     if not stats["by_category"]:
@@ -305,6 +307,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     text = update.message.text or ""
+
+    # Check if we're waiting for a new category name
+    waiting_action = context.user_data.pop("waiting_new_category", None)
+    if waiting_action:
+        await _handle_new_category_input(update, context, text.strip(), waiting_action)
+        return
+
     urls = URL_PATTERN.findall(text)
 
     if not urls:
@@ -481,19 +490,72 @@ async def _handle_question(
     await msg.edit_text(text)
 
 
+# ── New category input handler ───────────────────────────────────────────────
+
+async def _handle_new_category_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, action: str
+) -> None:
+    """Process user input for a new category slug."""
+    parts = text.split(maxsplit=1)
+    slug = parts[0].lower().strip()
+    description = parts[1].strip() if len(parts) > 1 else slug.replace("-", " ").title()
+
+    # Validate slug
+    clean_slug = re.sub(r"[^a-z0-9-]", "", slug)
+    if not clean_slug or len(clean_slug) > 30:
+        await update.message.reply_text("⚠️ Некорректный slug. Используй латиницу, цифры и дефис (до 30 символов).")
+        context.user_data["waiting_new_category"] = action
+        return
+
+    add_category(clean_slug, description)
+
+    if action == "add_channel":
+        pending = context.user_data.get("pending_channel")
+        if not pending:
+            await update.message.reply_text(f"✅ Категория `{clean_slug}` создана, но данные канала потеряны. Попробуй /add ещё раз.")
+            return
+        channels = load_channels()
+        channels.append({
+            "name": pending["name"],
+            "id": pending["id"],
+            "category": clean_slug,
+            "enabled": True,
+        })
+        save_channels(channels)
+        context.user_data.pop("pending_channel", None)
+        await update.message.reply_text(
+            f"✅ Категория `{clean_slug}` создана.\n"
+            f"✅ Канал {pending['name']} добавлен.\n\n"
+            "Загрузить последние 3 видео?",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Да", callback_data=f"fetch_recent:{pending['id']}:{clean_slug}"),
+                    InlineKeyboardButton("❌ Нет", callback_data="fetch_skip"),
+                ]
+            ]),
+        )
+    elif action == "recat":
+        await update.message.reply_text(
+            f"✅ Категория `{clean_slug}` создана и применена.\n"
+            "(Файл будет перемещён при следующей обработке)"
+        )
+
+
 # ── Inline keyboard callbacks ────────────────────────────────────────────────
 
 def _category_keyboard(prefix: str) -> InlineKeyboardMarkup:
-    """Build a grid of category buttons."""
+    """Build a grid of category buttons with a '+ Новая' option."""
+    categories = load_categories()
     buttons = []
     row: list[InlineKeyboardButton] = []
-    for slug in CATEGORIES:
+    for slug in categories:
         row.append(InlineKeyboardButton(slug, callback_data=f"{prefix}:{slug}"))
         if len(row) == 3:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
+    buttons.append([InlineKeyboardButton("➕ Новая категория", callback_data=f"{prefix}:__new__")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -523,6 +585,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.message.reply_text(
             f"📂 Категория изменена на: {new_category}\n"
             "(Файл будет перемещён при следующей обработке)"
+        )
+
+    elif data.startswith("add_channel:__new__") or data.startswith("recat:__new__"):
+        # User wants to create a new category — ask for slug
+        action = "add_channel" if data.startswith("add_channel") else "recat"
+        context.user_data["waiting_new_category"] = action
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            "✏️ Введи slug новой категории (например: `machine-learning`).\n"
+            "Можно через пробел добавить описание:\n"
+            "`machine-learning Machine Learning & Deep Learning`"
         )
 
     elif data.startswith("add_channel:"):

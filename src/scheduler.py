@@ -68,6 +68,8 @@ async def run_channel_check() -> int:
             )
             if result and "error" not in result:
                 total_processed += 1
+                if result.get("is_new_category"):
+                    logger.info("New category suggested: %s for %s", result["category"], video["title"])
             elif result and "error" in result:
                 logger.warning(
                     "Failed to process %s: %s", video["title"], result["error"]

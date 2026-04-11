@@ -165,6 +165,37 @@ def save_entry(
     return file_path
 
 
+# ── Move entry between categories ────────────────────────────────────────────
+
+def move_entry(old_path: str, new_category: str) -> str | None:
+    """Move a .md file to a new category directory. Returns new path or None."""
+    old = Path(old_path)
+    if not old.exists():
+        logger.warning("Cannot move — file not found: %s", old_path)
+        return None
+
+    # Build new path: knowledge/{new_category}/{year}/{month}/{filename}
+    # Extract year/month from old path structure
+    parts = old.relative_to(KNOWLEDGE_DIR).parts  # (old_cat, year, month, file)
+    if len(parts) >= 4:
+        new_path = KNOWLEDGE_DIR / new_category / parts[1] / parts[2] / parts[3]
+    else:
+        new_path = KNOWLEDGE_DIR / new_category / old.name
+
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Update category inside the file content
+    content = old.read_text(encoding="utf-8")
+    import re
+    content = re.sub(r"^- \*\*Category:\*\* .+$", f"- **Category:** {new_category}", content, count=1, flags=re.MULTILINE)
+    new_path.write_text(content, encoding="utf-8")
+
+    old.unlink()
+    logger.info("Moved entry: %s -> %s", old_path, new_path)
+    _update_index()
+    return str(new_path)
+
+
 # ── Index ────────────────────────────────────────────────────────────────────
 
 def _update_index() -> None:

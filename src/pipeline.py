@@ -57,9 +57,10 @@ def process_youtube_video(
         return {"error": f"Не удалось создать саммари для: {title}"}
 
     # Determine category
+    is_new_category = False
     final_category = category or summary.get("suggested_category")
     if not final_category:
-        final_category = categorize_content(title, transcript)
+        final_category, is_new_category = categorize_content(title, transcript)
 
     # Save
     file_path = save_entry(
@@ -79,7 +80,7 @@ def process_youtube_video(
 
     mark_processed(content_id, status="ok")
 
-    return {
+    result = {
         "title": title,
         "channel": channel,
         "date": date_str,
@@ -91,6 +92,9 @@ def process_youtube_video(
         "source_url": url,
         "source_type": "youtube_video",
     }
+    if is_new_category:
+        result["is_new_category"] = True
+    return result
 
 
 def process_web_article(
@@ -132,9 +136,10 @@ def process_web_article(
         return {"error": f"Не удалось создать саммари для: {title}"}
 
     # Determine category
+    is_new_category = False
     final_category = category or summary.get("suggested_category")
     if not final_category:
-        final_category = categorize_content(title, article["text"])
+        final_category, is_new_category = categorize_content(title, article["text"])
 
     # Save
     file_path = save_entry(
@@ -156,7 +161,7 @@ def process_web_article(
 
     mark_processed(content_id, status="ok")
 
-    return {
+    result = {
         "title": title,
         "source_name": source_name,
         "author": author,
@@ -170,3 +175,6 @@ def process_web_article(
         "source_type": "web_article",
         "sitename": sitename,
     }
+    if is_new_category:
+        result["is_new_category"] = True
+    return result

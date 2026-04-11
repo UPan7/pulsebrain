@@ -22,8 +22,12 @@ First 500 chars of content: {content_preview}
 Respond with ONLY the category slug, nothing else."""
 
 
-def categorize_content(title: str, content: str) -> str:
-    """Determine the best category for content. Returns a category slug."""
+def categorize_content(title: str, content: str) -> tuple[str, bool]:
+    """Determine the best category for content.
+
+    Returns (slug, is_new) — is_new=True when LLM suggested a category
+    that doesn't exist yet.
+    """
     categories = load_categories()
     client = openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
 
@@ -41,10 +45,12 @@ def categorize_content(title: str, content: str) -> str:
             messages=[{"role": "user", "content": prompt}],
         )
         slug = response.choices[0].message.content.strip().lower().replace(" ", "-")
-        if slug in categories or (len(slug) <= 30 and slug.replace("-", "").isalnum()):
-            return slug
+        if slug in categories:
+            return slug, False
+        if len(slug) <= 30 and slug.replace("-", "").isalnum():
+            return slug, True
         logger.warning("Unexpected category slug: %s, defaulting to ai-news", slug)
-        return "ai-news"
+        return "ai-news", False
     except Exception as exc:
         logger.error("Categorization failed: %s", exc)
-        return "ai-news"
+        return "ai-news", False

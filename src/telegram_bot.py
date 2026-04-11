@@ -28,7 +28,7 @@ from src.config import (
 from src.extractors.youtube import get_recent_video_ids, resolve_channel_id
 from src.pipeline import process_web_article, process_youtube_video
 from src.router import SourceType, detect_source_type
-from src.storage import get_recent_entries, get_stats, search_for_question, search_knowledge
+from src.storage import get_recent_entries, get_stats, move_entry, search_for_question, search_knowledge
 from src.summarize import answer_question
 
 logger = logging.getLogger(__name__)
@@ -350,11 +350,15 @@ async def _handle_youtube_video(
     bullets = "\n".join(f"• {b}" for b in result.get("summary_bullets", []))
     rel_path = os.path.relpath(result["file_path"], start="/app")
 
+    cat_line = f"📂 Категория: {result['category']}"
+    if result.get("is_new_category"):
+        cat_line += " 🆕 (новая!)"
+
     text = (
         f"📺 {result['title']}\n"
         f"by {result['channel']} | {result.get('date', '?')}\n\n"
         f"📋 Саммари:\n{bullets}\n\n"
-        f"📂 Категория: {result['category']}\n"
+        f"{cat_line}\n"
         f"🏷 {topics_str}\n"
         f"📊 Релевантность: {result['relevance']}/10\n"
         f"💾 Сохранено: {rel_path}"
@@ -424,11 +428,15 @@ async def _handle_web_article(
     source_line = result.get("sitename") or result.get("source_name", "")
     date_line = result.get("date", "?")
 
+    cat_line = f"📂 Категория: {result['category']}"
+    if result.get("is_new_category"):
+        cat_line += " 🆕 (новая!)"
+
     text = (
         f"📰 {result['title']}\n"
         f"{source_line} | {date_line}\n\n"
         f"📋 Саммари:\n{bullets}\n\n"
-        f"📂 Категория: {result['category']}\n"
+        f"{cat_line}\n"
         f"🏷 {topics_str}\n"
         f"📊 Релевантность: {result['relevance']}/10\n"
         f"💾 Сохранено: {rel_path}"
@@ -569,7 +577,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     data = query.data
 
     if data == "cat_ok":
-        # User confirmed category — just remove the keyboard
+        # User confirmed category — register if new
+        last = context.user_data.get("last_result", {})
+        if last.get("is_new_category"):
+            cat = last["category"]
+            add_category(cat, cat.replace("-", " ").title())
         await query.edit_message_reply_markup(reply_markup=None)
 
     elif data == "cat_change":
@@ -590,11 +602,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     elif data.startswith("recat:"):
         new_category = data.split(":", 1)[1]
+        last = context.user_data.get("last_result", {})
+        old_path = last.get("file_path")
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(
-            f"📂 Категория изменена на: {new_category}\n"
-            "(Файл будет перемещён при следующей обработке)"
-        )
+        if old_path:
+            new_path = move_entry(old_path, new_category)
+            if new_path:
+                await query.message.reply_text(f"📂 Категория изменена на: {new_category}\n💾 Файл перемещён.")
+            else:
+                await query.message.reply_text(f"📂 Категория: {new_category}\n⚠️ Файл не найден для перемещения.")
+        else:
+            await query.message.reply_text(f"📂 Категория изменена на: {new_category}")
 
     elif data.startswith("add_channel:"):
         category = data.split(":", 1)[1]

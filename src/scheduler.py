@@ -7,7 +7,13 @@ import logging
 
 import feedparser
 
-from src.config import CHECK_INTERVAL_MINUTES, MIN_RELEVANCE_THRESHOLD, load_channels, logger
+from src.config import (
+    CHECK_INTERVAL_MINUTES,
+    MIN_RELEVANCE_THRESHOLD,
+    TELEGRAM_CHAT_ID,
+    load_channels,
+    logger,
+)
 from src.pending import reject_pending
 from src.pipeline import process_youtube_video
 from src.storage import is_processed, make_content_id
@@ -47,9 +53,15 @@ async def run_channel_check(app=None) -> int:
     If *app* is provided, a Telegram notification with the approve/reject
     keyboard is sent for each successfully-staged video so the user can
     review the auto-fetched content before it lands in the knowledge base.
+    A round-digest message is always sent at the end of a run (even when
+    zero videos passed the filter) so the user can tell "nothing happened"
+    apart from "bot is dead".
     """
     channels = load_channels()
     total_processed = 0
+    total_rejected = 0
+    total_failed = 0
+    channels_checked = sum(1 for ch in channels if ch.get("enabled", True))
 
     # Phase 1: Parallel RSS fetches (I/O-bound, safe to parallelize)
     async def _fetch_one(channel):
@@ -63,7 +75,6 @@ async def run_channel_check(app=None) -> int:
     # Phase 2: Sequential video processing (respects rate limits)
     for channel, videos in results:
         category = channel.get("category")
-        channel_name = channel["name"]
 
         for video in videos:
             content_id = make_content_id("youtube_video", video["video_id"])
@@ -81,9 +92,12 @@ async def run_channel_check(app=None) -> int:
             if result and "error" not in result:
                 # Relevance gate: per-channel override > global default.
                 # Below threshold → silent reject, no notification, no
-                # counter bump. The content_id is already marked pending
-                # inside the pipeline; reject_pending flips it to
-                # "rejected" so the scheduler never re-fetches it.
+                # processed-counter bump. The content_id is already
+                # marked pending inside the pipeline; reject_pending
+                # flips it to "rejected" so the scheduler never
+                # re-fetches it. The rejection is logged to
+                # rejected_log.jsonl so the user can inspect it via
+                # /rejected.
                 threshold = channel.get("min_relevance", MIN_RELEVANCE_THRESHOLD)
                 relevance = result.get("relevance", 5)
                 if relevance < threshold:
@@ -91,7 +105,8 @@ async def run_channel_check(app=None) -> int:
                         "Auto-rejected low-relevance video: %s (rel=%d, threshold=%d)",
                         video["title"], relevance, threshold,
                     )
-                    reject_pending(result["pending_id"])
+                    reject_pending(result["pending_id"], reason="low_relevance")
+                    total_rejected += 1
                     await asyncio.sleep(3)
                     continue
 
@@ -107,6 +122,7 @@ async def run_channel_check(app=None) -> int:
                         logger.warning("Failed to send notification for %s: %s",
                                        video["title"], exc)
             elif result and "error" in result:
+                total_failed += 1
                 logger.warning(
                     "Failed to process %s: %s", video["title"], result["error"]
                 )
@@ -114,8 +130,51 @@ async def run_channel_check(app=None) -> int:
             # Rate limiting: 3-second delay between YouTube requests
             await asyncio.sleep(3)
 
-    logger.info("Channel check complete. Processed %d new videos.", total_processed)
+    logger.info(
+        "Channel check complete. Processed %d, rejected %d, failed %d across %d channels.",
+        total_processed, total_rejected, total_failed, channels_checked,
+    )
+
+    await _send_round_digest(
+        app,
+        channels_checked=channels_checked,
+        total_processed=total_processed,
+        total_rejected=total_rejected,
+        total_failed=total_failed,
+    )
+
     return total_processed
+
+
+async def _send_round_digest(
+    app,
+    *,
+    channels_checked: int,
+    total_processed: int,
+    total_rejected: int,
+    total_failed: int,
+) -> None:
+    """Post-run summary. Always sent when *app* is provided, even for
+    zero-result runs — the whole point is to prove to the user that
+    the scheduler is alive.
+
+    Failures (Telegram down, mock app in tests) are swallowed so the
+    scheduler run is never considered broken by a flaky notification.
+    """
+    if app is None:
+        return
+    text = (
+        "🔄 Прогон завершён\n\n"
+        f"Каналов проверено: {channels_checked}\n"
+        f"Новых в /pending: {total_processed}\n"
+        f"Авто-отклонено: {total_rejected}\n"
+        f"Ошибок: {total_failed}\n\n"
+        f"Следующий через {CHECK_INTERVAL_MINUTES} мин"
+    )
+    try:
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+    except Exception as exc:
+        logger.warning("Failed to send round digest: %s", exc)
 
 
 def setup_scheduler(app) -> None:

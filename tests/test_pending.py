@@ -330,3 +330,150 @@ def test_commit_pending_writes_source_sibling(tmp_knowledge_dir, sample_pending_
     sibling = _source_sibling_path(file_path)
     assert sibling.exists()
     assert sibling.read_text("utf-8") == transcript
+
+
+# ── Rejected log (Phase 2.0) ───────────────────────────────────────────────
+
+
+def test_reject_pending_writes_to_rejected_log(tmp_knowledge_dir, sample_pending_kwargs):
+    """reject_pending appends a record to data/rejected_log.jsonl."""
+    import src.config
+    from src.pending import init_pending, stage_pending, reject_pending
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    pending_id = stage_pending(**sample_pending_kwargs)
+    reject_pending(pending_id, reason="low_relevance")
+
+    assert src.config.REJECTED_LOG_FILE.exists()
+    content = src.config.REJECTED_LOG_FILE.read_text("utf-8").strip()
+    record = json.loads(content)
+    assert record["pending_id"] == pending_id
+    assert record["title"] == "Test Video Title"
+    assert record["source_name"] == "TestChannel"
+    assert record["reason"] == "low_relevance"
+    assert record["relevance"] == 8
+
+
+def test_reject_pending_defaults_reason_to_manual(tmp_knowledge_dir, sample_pending_kwargs):
+    """Without an explicit reason, log records 'manual' (UI button path)."""
+    import src.config
+    from src.pending import init_pending, stage_pending, reject_pending
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    pending_id = stage_pending(**sample_pending_kwargs)
+    reject_pending(pending_id)
+
+    record = json.loads(src.config.REJECTED_LOG_FILE.read_text("utf-8").strip())
+    assert record["reason"] == "manual"
+
+
+def test_rejected_log_is_appendonly_jsonl(tmp_knowledge_dir, sample_pending_kwargs):
+    """Two sequential rejects produce two JSONL lines (newest last)."""
+    import src.config
+    from src.pending import init_pending, stage_pending, reject_pending
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    pid1 = stage_pending(**sample_pending_kwargs)
+    reject_pending(pid1, reason="manual")
+
+    pid2 = stage_pending(**{**sample_pending_kwargs, "content_id": "yt:second", "title": "Second"})
+    reject_pending(pid2, reason="low_relevance")
+
+    lines = src.config.REJECTED_LOG_FILE.read_text("utf-8").strip().splitlines()
+    assert len(lines) == 2
+    first = json.loads(lines[0])
+    second = json.loads(lines[1])
+    assert first["title"] == "Test Video Title"
+    assert second["title"] == "Second"
+    assert second["reason"] == "low_relevance"
+
+
+def test_read_rejected_log_returns_newest_first(tmp_knowledge_dir, sample_pending_kwargs):
+    """read_rejected_log reverses on-disk order (oldest→newest) into newest-first."""
+    from src.pending import (
+        init_pending,
+        read_rejected_log,
+        reject_pending,
+        stage_pending,
+    )
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    reject_pending(stage_pending(**sample_pending_kwargs), reason="manual")
+    reject_pending(
+        stage_pending(**{**sample_pending_kwargs, "content_id": "yt:b", "title": "B"}),
+        reason="low_relevance",
+    )
+    reject_pending(
+        stage_pending(**{**sample_pending_kwargs, "content_id": "yt:c", "title": "C"}),
+        reason="low_relevance",
+    )
+
+    records = read_rejected_log(limit=10)
+    assert [r["title"] for r in records] == ["C", "B", "Test Video Title"]
+
+
+def test_read_rejected_log_respects_limit(tmp_knowledge_dir, sample_pending_kwargs):
+    from src.pending import (
+        init_pending,
+        read_rejected_log,
+        reject_pending,
+        stage_pending,
+    )
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    for i in range(5):
+        reject_pending(
+            stage_pending(**{**sample_pending_kwargs, "content_id": f"yt:{i}", "title": f"T{i}"}),
+            reason="manual",
+        )
+
+    records = read_rejected_log(limit=3)
+    assert len(records) == 3
+    assert records[0]["title"] == "T4"  # newest
+
+
+def test_read_rejected_log_missing_file_returns_empty(tmp_knowledge_dir):
+    from src.pending import read_rejected_log
+    assert read_rejected_log() == []
+
+
+def test_read_rejected_log_skips_malformed_lines(tmp_knowledge_dir, sample_pending_kwargs):
+    """A corrupted line doesn't kill the whole read."""
+    import src.config
+    from src.pending import (
+        init_pending,
+        read_rejected_log,
+        reject_pending,
+        stage_pending,
+    )
+    from src.storage import init_processed
+
+    init_processed()
+    init_pending()
+    reject_pending(stage_pending(**sample_pending_kwargs), reason="manual")
+
+    # Corrupt the file: append a garbage line then another valid one
+    with open(src.config.REJECTED_LOG_FILE, "a", encoding="utf-8") as f:
+        f.write("NOT JSON {{{\n")
+        f.write(json.dumps({
+            "ts": "2026-04-12T00:00:00Z",
+            "pending_id": "xyz",
+            "title": "Recovered",
+            "relevance": 2,
+            "reason": "manual",
+        }) + "\n")
+
+    records = read_rejected_log(limit=10)
+    # Two valid records, one garbage skipped
+    assert len(records) == 2
+    assert records[0]["title"] == "Recovered"

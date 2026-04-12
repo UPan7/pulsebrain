@@ -31,6 +31,7 @@ from src.pending import (
     commit_pending,
     get_pending,
     list_pending,
+    read_rejected_log,
     reject_pending,
     update_pending_category,
 )
@@ -167,6 +168,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/search <запрос> — Поиск по базе знаний\n"
         "/recent [N] — Последние N записей (по умолч. 5)\n"
         "/pending — Записи на подтверждение\n"
+        "/rejected [N] — Последние авто-отклонённые видео\n"
         "/status — Состояние бота\n"
         "/run — Запустить проверку каналов\n"
         "/stats — Подробная статистика\n"
@@ -424,6 +426,55 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             _truncate_message(_render_pending_message(entry)),
             reply_markup=_pending_keyboard(entry["id"]),
         )
+
+
+# ── Reason → Russian label map for /rejected ────────────────────────────────
+
+_REJECT_REASON_LABELS: dict[str, str] = {
+    "low_relevance": "низкая релевантность",
+    "manual": "вручную",
+}
+
+
+async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the last N auto-rejected videos from rejected_log.jsonl.
+
+    Usage: /rejected [N]  — defaults to 10.
+    Primary use case: sanity-check MIN_RELEVANCE_THRESHOLD by seeing
+    which videos the scheduler dropped and why.
+    """
+    if not _authorized(update):
+        return
+    args = context.args or []
+    try:
+        limit = int(args[0]) if args else 10
+    except ValueError:
+        limit = 10
+    limit = max(1, min(limit, 50))
+
+    records = read_rejected_log(limit)
+    if not records:
+        await update.message.reply_text(
+            "📭 Лог отклонённых пуст.\n"
+            "Ничего не было авто-отклонено — либо порог релевантности "
+            "достаточно мягкий, либо новых видео пока не было."
+        )
+        return
+
+    lines = [f"❌ Последние {len(records)} отклонённых:\n"]
+    for rec in records:
+        icon = _SOURCE_ICONS.get(rec.get("source_type", ""), "📄")
+        title = rec.get("title", "?")
+        source = rec.get("source_name", "?")
+        score = rec.get("relevance", "?")
+        reason_key = rec.get("reason", "manual")
+        reason = _REJECT_REASON_LABELS.get(reason_key, reason_key)
+        lines.append(
+            f"{icon} {title}\n"
+            f"    рел {score}/10 · {source} · {reason}"
+        )
+
+    await update.message.reply_text(_truncate_message("\n".join(lines)))
 
 
 # ── Link drop handler ────────────────────────────────────────────────────────
@@ -853,6 +904,7 @@ def create_bot_application(post_init=None) -> Application:
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("pending", cmd_pending))
+    app.add_handler(CommandHandler("rejected", cmd_rejected))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))

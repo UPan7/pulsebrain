@@ -17,6 +17,7 @@ DATA_DIR = BASE_DIR / "data"
 CHANNELS_FILE = BASE_DIR / "channels.yml"
 PROCESSED_FILE = DATA_DIR / "processed.json"
 PENDING_FILE = DATA_DIR / "pending.json"
+REJECTED_LOG_FILE = DATA_DIR / "rejected_log.jsonl"
 
 # ── Environment ──────────────────────────────────────────────────────────────
 OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")

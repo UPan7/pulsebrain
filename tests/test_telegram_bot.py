@@ -230,7 +230,7 @@ def test_truncate_with_unicode():
     [
         "cmd_start", "cmd_help", "cmd_list", "cmd_add", "cmd_remove",
         "cmd_categories", "cmd_search", "cmd_recent", "cmd_status",
-        "cmd_stats", "cmd_run", "cmd_pending", "handle_message",
+        "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected", "handle_message",
     ],
 )
 async def test_unauthorized_short_circuits_every_command(handler_name):
@@ -724,6 +724,129 @@ async def test_cmd_pending_lists_entries():
     # Each entry's reply has the keyboard attached
     for call in update.message.reply_text.call_args_list[1:]:
         assert "reply_markup" in call.kwargs
+
+
+# ── cmd_rejected (Phase 2.0) ──────────────────────────────────────────────
+
+
+def _fake_rejected_record(title: str = "Бесполезное видео", relevance: int = 3,
+                          reason: str = "low_relevance"):
+    return {
+        "ts": "2026-04-12T10:30:00+00:00",
+        "pending_id": "cafef00d",
+        "title": title,
+        "source_name": "NoiseMaker",
+        "source_url": "https://youtube.com/watch?v=xyz",
+        "source_type": "youtube_video",
+        "relevance": relevance,
+        "reason": reason,
+    }
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_empty_log():
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=[]),
+    ):
+        await cmd_rejected(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "пуст" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_shows_records_with_score_and_reason():
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    records = [
+        _fake_rejected_record("Docker 101", 2, "low_relevance"),
+        _fake_rejected_record("Generic listicle", 3, "low_relevance"),
+    ]
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=records) as mock_read,
+    ):
+        await cmd_rejected(update, ctx)
+
+    mock_read.assert_called_once_with(10)  # default
+    text = update.message.reply_text.call_args[0][0]
+    assert "Docker 101" in text
+    assert "Generic listicle" in text
+    assert "рел 2/10" in text
+    assert "рел 3/10" in text
+    assert "низкая релевантность" in text
+    assert "NoiseMaker" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_honors_numeric_arg():
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["3"])
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
+    ):
+        await cmd_rejected(update, ctx)
+
+    mock_read.assert_called_once_with(3)
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_caps_limit_at_50():
+    """Paranoid cap so a bogus /rejected 1000000 doesn't blow the message size."""
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["999"])
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
+    ):
+        await cmd_rejected(update, ctx)
+
+    mock_read.assert_called_once_with(50)
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_handles_non_numeric_arg():
+    """/rejected foo → falls back to default 10."""
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["foo"])
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
+    ):
+        await cmd_rejected(update, ctx)
+
+    mock_read.assert_called_once_with(10)
+
+
+@pytest.mark.asyncio
+async def test_cmd_rejected_maps_manual_reason():
+    from src.telegram_bot import cmd_rejected
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    records = [_fake_rejected_record("User rejected this", 7, "manual")]
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.read_rejected_log", return_value=records),
+    ):
+        await cmd_rejected(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "вручную" in text
 
 
 # ── URL handlers ───────────────────────────────────────────────────────────
@@ -1343,5 +1466,5 @@ def test_create_bot_application_registers_handlers():
         app = create_bot_application()
 
     assert app is fake_app
-    # 12 commands (incl. /pending) + 1 callback + 1 message = 14 handlers
-    assert fake_app.add_handler.call_count == 14
+    # 13 commands (incl. /pending, /rejected) + 1 callback + 1 message = 15 handlers
+    assert fake_app.add_handler.call_count == 15

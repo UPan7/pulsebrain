@@ -42,6 +42,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     data.mkdir()
     processed = data / "processed.json"
     pending = data / "pending.json"
+    rejected_log = data / "rejected_log.jsonl"
     categories = data / "categories.yml"
     channels = tmp_path / "channels.yml"
 
@@ -50,6 +51,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "DATA_DIR": data,
         "PROCESSED_FILE": processed,
         "PENDING_FILE": pending,
+        "REJECTED_LOG_FILE": rejected_log,
         "CATEGORIES_FILE": categories,
         "CHANNELS_FILE": channels,
     }

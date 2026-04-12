@@ -346,7 +346,7 @@ async def test_run_channel_check_auto_rejects_below_global_threshold():
         count = await run_channel_check(app=fake_app)
 
     assert count == 0
-    mock_reject.assert_called_once_with("dead")
+    mock_reject.assert_called_once_with("dead", reason="low_relevance")
     mock_notify.assert_not_called()
 
 
@@ -375,7 +375,7 @@ async def test_run_channel_check_uses_per_channel_threshold():
         count = await run_channel_check(app=fake_app)
 
     assert count == 0
-    mock_reject.assert_called_once_with("dead")
+    mock_reject.assert_called_once_with("dead", reason="low_relevance")
     mock_notify.assert_not_called()
 
 
@@ -447,3 +447,161 @@ def test_setup_scheduler_uses_check_interval():
     _, kwargs = fake_scheduler.add_job.call_args
     assert kwargs["id"] == "channel_check"
     assert kwargs["replace_existing"] is True
+
+
+# ── Round digest (Phase 2.0) ────────────────────────────────────────────
+
+
+def _fake_app_with_bot():
+    """MagicMock app whose .bot.send_message is an AsyncMock."""
+    app = MagicMock()
+    app.bot = MagicMock()
+    app.bot.send_message = AsyncMock()
+    return app
+
+
+@pytest.mark.asyncio
+async def test_round_digest_sent_on_empty_run():
+    """Zero videos across all channels still produces a digest with 0/0/0."""
+    from src.scheduler import run_channel_check
+
+    channels = [
+        {"name": "A", "id": "UC_a", "category": "ai-news", "enabled": True},
+        {"name": "B", "id": "UC_b", "category": "ai-news", "enabled": True},
+    ]
+    app = _fake_app_with_bot()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(app=app)
+
+    app.bot.send_message.assert_called_once()
+    _, kwargs = app.bot.send_message.call_args
+    text = kwargs["text"]
+    assert "Каналов проверено: 2" in text
+    assert "Новых в /pending: 0" in text
+    assert "Авто-отклонено: 0" in text
+    assert "Ошибок: 0" in text
+
+
+@pytest.mark.asyncio
+async def test_round_digest_counts_mixed_outcomes():
+    """Mixed run: 1 passed, 1 auto-rejected, 1 errored → digest reflects all three."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("pass"), _make_video("reject"), _make_video("fail")]
+    app = _fake_app_with_bot()
+
+    def fake_process(url, **kwargs):
+        if "pass" in url:
+            return {"title": "Pass", "pending_id": "p1", "relevance": 9}
+        if "reject" in url:
+            return {"title": "Reject", "pending_id": "p2", "relevance": 2}
+        return {"error": "no transcript"}
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video", side_effect=fake_process),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 5),
+        patch("src.scheduler.reject_pending", return_value=True),
+        patch("src.telegram_bot.send_notification", new_callable=AsyncMock),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(app=app)
+
+    app.bot.send_message.assert_called_once()
+    text = app.bot.send_message.call_args.kwargs["text"]
+    assert "Каналов проверено: 1" in text
+    assert "Новых в /pending: 1" in text
+    assert "Авто-отклонено: 1" in text
+    assert "Ошибок: 1" in text
+
+
+@pytest.mark.asyncio
+async def test_round_digest_not_sent_when_app_is_none():
+    """Without an app (test harness / cron path), no digest is attempted."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        # Should not raise even though no app is given
+        count = await run_channel_check()
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_round_digest_swallows_send_failures():
+    """A flaky Telegram must not break the scheduler run."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    app = MagicMock()
+    app.bot = MagicMock()
+    app.bot.send_message = AsyncMock(side_effect=RuntimeError("telegram down"))
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        # Should not propagate the RuntimeError
+        count = await run_channel_check(app=app)
+
+    assert count == 0
+    app.bot.send_message.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_round_digest_counts_only_enabled_channels():
+    """channels_checked ignores disabled ones."""
+    from src.scheduler import run_channel_check
+
+    channels = [
+        {"name": "A", "id": "UC_a", "category": "ai-news", "enabled": True},
+        {"name": "B", "id": "UC_b", "category": "ai-news", "enabled": False},
+        {"name": "C", "id": "UC_c", "category": "ai-news", "enabled": True},
+    ]
+    app = _fake_app_with_bot()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(app=app)
+
+    text = app.bot.send_message.call_args.kwargs["text"]
+    assert "Каналов проверено: 2" in text
+
+
+@pytest.mark.asyncio
+async def test_scheduler_reject_passes_low_relevance_reason():
+    """The scheduler's auto-reject tags the rejection as 'low_relevance'."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "Meh", "pending_id": "x", "relevance": 2}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 5),
+        patch("src.scheduler.reject_pending", return_value=True) as mock_reject,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check()
+
+    mock_reject.assert_called_once_with("x", reason="low_relevance")

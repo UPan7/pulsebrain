@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.config import DATA_DIR, PENDING_FILE
+from src.config import DATA_DIR, PENDING_FILE, REJECTED_LOG_FILE
 from src.storage import _validate_category, mark_processed, save_entry
 
 logger = logging.getLogger(__name__)
@@ -216,8 +216,67 @@ def commit_pending(pending_id: str) -> Path | None:
     return file_path
 
 
-def reject_pending(pending_id: str) -> bool:
-    """Drop a pending entry and mark its content_id as rejected. Returns True on success."""
+def _append_rejected_log(entry: dict[str, Any], reason: str) -> None:
+    """Append a rejection record to data/rejected_log.jsonl (one line per reject).
+
+    Never raises — log failures are swallowed so the caller's rejection still
+    succeeds. The log is the source for the /rejected Telegram command.
+    """
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "pending_id": entry.get("id", ""),
+            "title": entry.get("title", "?"),
+            "source_name": entry.get("source_name", "?"),
+            "source_url": entry.get("source_url", ""),
+            "source_type": entry.get("source_type", ""),
+            "relevance": entry.get("relevance", 0),
+            "reason": reason,
+        }
+        with open(REJECTED_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Failed to append rejected log: %s", exc)
+
+
+def read_rejected_log(limit: int = 10) -> list[dict[str, Any]]:
+    """Return the last *limit* entries from rejected_log.jsonl, newest first.
+
+    Returns an empty list if the log doesn't exist or can't be parsed.
+    """
+    if not REJECTED_LOG_FILE.exists():
+        return []
+    try:
+        with open(REJECTED_LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+
+    records: list[dict[str, Any]] = []
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+        if len(records) >= limit:
+            break
+    return records
+
+
+def reject_pending(pending_id: str, reason: str = "manual") -> bool:
+    """Drop a pending entry and mark its content_id as rejected.
+
+    *reason* is recorded to rejected_log.jsonl for later inspection via
+    the /rejected command. Callers from the scheduler should pass
+    "low_relevance"; the default "manual" covers user-initiated rejects
+    via the Telegram approve/reject keyboard.
+
+    Returns True on success.
+    """
     global _pending_cache
     with _pending_lock:
         if _pending_cache is None:
@@ -226,9 +285,12 @@ def reject_pending(pending_id: str) -> bool:
         if entry is None:
             return False
         content_id = entry["content_id"]
+        # Snapshot for logging before we drop the entry from memory.
+        log_snapshot = dict(entry)
         del _pending_cache[pending_id]
         _flush_pending()
 
+    _append_rejected_log(log_snapshot, reason)
     mark_processed(content_id, status="rejected")
-    logger.info("Rejected pending entry %s", pending_id)
+    logger.info("Rejected pending entry %s (reason=%s)", pending_id, reason)
     return True

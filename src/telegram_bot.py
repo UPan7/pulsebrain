@@ -175,6 +175,20 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(t("help_text", get_language()))
 
 
+async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fast shortcut to switch interface language without re-running the wizard.
+
+    The callback path (lang:ru / lang:en) is already wired in
+    callback_handler — this handler just renders the keyboard.
+    """
+    if not _authorized(update):
+        return
+    await update.message.reply_text(
+        t("language_menu_prompt", get_language()),
+        reply_markup=_language_keyboard(),
+    )
+
+
 async def cmd_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Re-run the onboarding wizard. Confirms first if a profile exists."""
     if not _authorized(update):
@@ -1262,6 +1276,7 @@ def create_bot_application(post_init=None) -> Application:
     app.add_handler(CommandHandler("rejected", cmd_rejected))
     app.add_handler(CommandHandler("onboarding", cmd_onboarding))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("language", cmd_language))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))

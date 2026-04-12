@@ -274,7 +274,7 @@ def test_truncate_with_unicode():
         "cmd_start", "cmd_help", "cmd_list", "cmd_add", "cmd_remove",
         "cmd_categories", "cmd_search", "cmd_recent", "cmd_status",
         "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected",
-        "cmd_onboarding", "cmd_cancel", "handle_message",
+        "cmd_onboarding", "cmd_cancel", "cmd_language", "handle_message",
     ],
 )
 async def test_unauthorized_short_circuits_every_command(handler_name):
@@ -1534,9 +1534,9 @@ def test_create_bot_application_registers_handlers():
         app = create_bot_application()
 
     assert app is fake_app
-    # 15 commands (incl. /pending, /rejected, /onboarding, /cancel)
-    # + 1 callback + 1 message = 17 handlers
-    assert fake_app.add_handler.call_count == 17
+    # 16 commands (incl. /pending, /rejected, /onboarding, /cancel, /language)
+    # + 1 callback + 1 message = 18 handlers
+    assert fake_app.add_handler.call_count == 18
 
 
 # ── Onboarding wizard (Phase 5.3) ────────────────────────────────────────
@@ -1899,3 +1899,110 @@ async def test_onboarding_rerun_yes_starts_wizard(tmp_knowledge_dir):
         await callback_handler(cb, ctx)
 
     assert ctx.user_data["onboarding_step"] == 0
+
+
+# ── /language command (Phase 5.4) ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_language_shows_picker_keyboard(tmp_knowledge_dir):
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import cmd_language
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_language(update, ctx)
+
+    call = update.message.reply_text.call_args
+    text = call[0][0]
+    assert "язык" in text.lower() or "language" in text.lower()
+    assert "reply_markup" in call.kwargs
+
+
+@pytest.mark.asyncio
+async def test_cmd_language_in_english(tmp_knowledge_dir):
+    """When current language is en, the prompt is in English."""
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import cmd_language
+
+    init_profile()
+    save_profile({"language": "en", "persona": "X"})
+    ctx = _make_context()
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_language(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "language" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_language_callback_writes_profile(tmp_knowledge_dir):
+    """lang:en callback persists the choice."""
+    from src.profile import init_profile, load_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+
+    cb = _make_callback_update(12345, "lang:en")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    assert load_profile()["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_language_callback_confirmation_in_new_language(tmp_knowledge_dir):
+    """After switching to en, the confirmation text is English."""
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+
+    cb = _make_callback_update(12345, "lang:en")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    text = cb.callback_query.edit_message_text.call_args[0][0]
+    assert "English" in text
+    assert "switched" in text.lower() or "language" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_language_callback_ignores_unknown_code(tmp_knowledge_dir):
+    """lang:klingon is silently ignored — profile stays put."""
+    from src.profile import init_profile, load_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+
+    cb = _make_callback_update(12345, "lang:klingon")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    assert load_profile()["language"] == "ru"
+
+
+@pytest.mark.asyncio
+async def test_language_roundtrip_ru_to_en_to_ru(tmp_knowledge_dir):
+    from src.profile import init_profile, load_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(_make_callback_update(12345, "lang:en"), ctx)
+        assert load_profile()["language"] == "en"
+        await callback_handler(_make_callback_update(12345, "lang:ru"), ctx)
+        assert load_profile()["language"] == "ru"

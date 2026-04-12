@@ -202,7 +202,7 @@ def test_youtube_pipeline_stage_then_reject(tmp_knowledge_dir):
     ):
         again = process_youtube_video("https://www.youtube.com/watch?v=rejvid01")
         assert "error" in again
-        assert "уже обработано" in again["error"]
+        assert "already been processed" in again["error"]
         mock_meta.assert_not_called()
         mock_t.assert_not_called()
         mock_s.assert_not_called()
@@ -225,4 +225,4 @@ def test_pipeline_dedup_across_calls_after_stage(tmp_knowledge_dir):
 
     assert "error" not in first
     assert "error" in second
-    assert "уже обработано" in second["error"]
+    assert "already been processed" in second["error"]

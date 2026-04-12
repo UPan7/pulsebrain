@@ -298,6 +298,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ Обработано {done} из {total} видео.",
         "fetch_skipped": "👌 Хорошо, видео не загружены.",
         "error_notify_body": "⚠️ Ошибка при обработке:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "Не удалось извлечь ID видео из ссылки.",
+        "pipeline_err_video_already_processed": "Это видео уже обработано.",
+        "pipeline_err_transcript_unavailable": "Транскрипт недоступен для: {title}",
+        "pipeline_err_article_already_processed": "Эта статья уже обработана.",
+        "pipeline_err_web_extract_failed": (
+            "Не удалось извлечь контент с этой страницы.\n"
+            "Возможно, сайт требует JavaScript или блокирует парсинг."
+        ),
+        "pipeline_err_unknown_source_type": "Неизвестный тип контента: {source_type}",
+        "pipeline_err_summarize_failed": "Не удалось создать саммари для: {title}",
     },
     "en": {
         # ── /start, /help ──
@@ -524,6 +536,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ Processed {done} out of {total} videos.",
         "fetch_skipped": "👌 OK, videos not fetched.",
         "error_notify_body": "⚠️ Error while processing:\n{title}\n{error}",
+
+        # ── Phase 7.3b: pipeline error messages ──
+        "pipeline_err_video_id_extract": "Couldn't extract video ID from the link.",
+        "pipeline_err_video_already_processed": "This video has already been processed.",
+        "pipeline_err_transcript_unavailable": "Transcript unavailable for: {title}",
+        "pipeline_err_article_already_processed": "This article has already been processed.",
+        "pipeline_err_web_extract_failed": (
+            "Couldn't extract content from this page.\n"
+            "The site may require JavaScript or block scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Unknown content type: {source_type}",
+        "pipeline_err_summarize_failed": "Couldn't produce a summary for: {title}",
     },
     "de": {
         "welcome_returning": (
@@ -741,6 +765,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ {done} von {total} Videos verarbeitet.",
         "fetch_skipped": "👌 OK, Videos werden nicht abgerufen.",
         "error_notify_body": "⚠️ Fehler bei der Verarbeitung:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "Video-ID konnte nicht aus dem Link extrahiert werden.",
+        "pipeline_err_video_already_processed": "Dieses Video wurde bereits verarbeitet.",
+        "pipeline_err_transcript_unavailable": "Transkript nicht verfügbar für: {title}",
+        "pipeline_err_article_already_processed": "Dieser Artikel wurde bereits verarbeitet.",
+        "pipeline_err_web_extract_failed": (
+            "Inhalt konnte nicht von dieser Seite extrahiert werden.\n"
+            "Die Seite benötigt möglicherweise JavaScript oder blockiert das Scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Unbekannter Inhaltstyp: {source_type}",
+        "pipeline_err_summarize_failed": "Zusammenfassung konnte nicht erstellt werden für: {title}",
     },
     "fr": {
         "welcome_returning": (
@@ -957,6 +993,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ {done} sur {total} vidéos traitées.",
         "fetch_skipped": "👌 OK, les vidéos ne seront pas récupérées.",
         "error_notify_body": "⚠️ Erreur lors du traitement :\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "Impossible d'extraire l'ID vidéo depuis le lien.",
+        "pipeline_err_video_already_processed": "Cette vidéo a déjà été traitée.",
+        "pipeline_err_transcript_unavailable": "Transcription indisponible pour : {title}",
+        "pipeline_err_article_already_processed": "Cet article a déjà été traité.",
+        "pipeline_err_web_extract_failed": (
+            "Impossible d'extraire le contenu de cette page.\n"
+            "Le site peut nécessiter JavaScript ou bloquer le scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Type de contenu inconnu : {source_type}",
+        "pipeline_err_summarize_failed": "Impossible de produire un résumé pour : {title}",
     },
     "es": {
         "welcome_returning": (
@@ -1172,6 +1220,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ Procesados {done} de {total} vídeos.",
         "fetch_skipped": "👌 Vale, los vídeos no se obtendrán.",
         "error_notify_body": "⚠️ Error al procesar:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "No se pudo extraer el ID del vídeo desde el enlace.",
+        "pipeline_err_video_already_processed": "Este vídeo ya ha sido procesado.",
+        "pipeline_err_transcript_unavailable": "Transcripción no disponible para: {title}",
+        "pipeline_err_article_already_processed": "Este artículo ya ha sido procesado.",
+        "pipeline_err_web_extract_failed": (
+            "No se pudo extraer el contenido de esta página.\n"
+            "El sitio puede requerir JavaScript o bloquear el scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Tipo de contenido desconocido: {source_type}",
+        "pipeline_err_summarize_failed": "No se pudo generar un resumen para: {title}",
     },
     "it": {
         "welcome_returning": (
@@ -1385,6 +1445,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ Elaborati {done} su {total} video.",
         "fetch_skipped": "👌 OK, i video non verranno recuperati.",
         "error_notify_body": "⚠️ Errore durante l'elaborazione:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "Impossibile estrarre l'ID del video dal link.",
+        "pipeline_err_video_already_processed": "Questo video è già stato elaborato.",
+        "pipeline_err_transcript_unavailable": "Trascrizione non disponibile per: {title}",
+        "pipeline_err_article_already_processed": "Questo articolo è già stato elaborato.",
+        "pipeline_err_web_extract_failed": (
+            "Impossibile estrarre il contenuto da questa pagina.\n"
+            "Il sito potrebbe richiedere JavaScript o bloccare lo scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Tipo di contenuto sconosciuto: {source_type}",
+        "pipeline_err_summarize_failed": "Impossibile produrre un riepilogo per: {title}",
     },
     "pt": {
         "welcome_returning": (
@@ -1598,6 +1670,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ Processados {done} de {total} vídeos.",
         "fetch_skipped": "👌 OK, vídeos não serão buscados.",
         "error_notify_body": "⚠️ Erro ao processar:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "Não foi possível extrair o ID do vídeo do link.",
+        "pipeline_err_video_already_processed": "Este vídeo já foi processado.",
+        "pipeline_err_transcript_unavailable": "Transcrição indisponível para: {title}",
+        "pipeline_err_article_already_processed": "Este artigo já foi processado.",
+        "pipeline_err_web_extract_failed": (
+            "Não foi possível extrair o conteúdo desta página.\n"
+            "O site pode exigir JavaScript ou bloquear scraping."
+        ),
+        "pipeline_err_unknown_source_type": "Tipo de conteúdo desconhecido: {source_type}",
+        "pipeline_err_summarize_failed": "Não foi possível gerar um resumo para: {title}",
     },
     "zh": {
         "welcome_returning": (
@@ -1798,6 +1882,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ 已处理 {done}/{total} 个视频。",
         "fetch_skipped": "👌 好，视频不会获取。",
         "error_notify_body": "⚠️ 处理时出错：\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "无法从链接中提取视频 ID。",
+        "pipeline_err_video_already_processed": "该视频已经处理过。",
+        "pipeline_err_transcript_unavailable": "无法获取字幕：{title}",
+        "pipeline_err_article_already_processed": "该文章已经处理过。",
+        "pipeline_err_web_extract_failed": (
+            "无法从此页面提取内容。\n"
+            "网站可能需要 JavaScript 或屏蔽了抓取。"
+        ),
+        "pipeline_err_unknown_source_type": "未知的内容类型：{source_type}",
+        "pipeline_err_summarize_failed": "无法为以下内容生成摘要：{title}",
     },
     "ja": {
         "welcome_returning": (
@@ -2006,6 +2102,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ {done}/{total} 本の動画を処理しました。",
         "fetch_skipped": "👌 OK、動画は取得しません。",
         "error_notify_body": "⚠️ 処理中にエラー：\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "リンクから動画 ID を抽出できませんでした。",
+        "pipeline_err_video_already_processed": "この動画はすでに処理済みです。",
+        "pipeline_err_transcript_unavailable": "トランスクリプトが利用できません：{title}",
+        "pipeline_err_article_already_processed": "この記事はすでに処理済みです。",
+        "pipeline_err_web_extract_failed": (
+            "このページからコンテンツを抽出できませんでした。\n"
+            "サイトが JavaScript を必要とするか、スクレイピングをブロックしている可能性があります。"
+        ),
+        "pipeline_err_unknown_source_type": "不明なコンテンツタイプ：{source_type}",
+        "pipeline_err_summarize_failed": "以下の要約を作成できませんでした：{title}",
     },
     "ar": {
         "welcome_returning": (
@@ -2214,6 +2322,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "fetch_processed": "✅ تمت معالجة {done} من {total} فيديو.",
         "fetch_skipped": "👌 حسناً، لن يتم جلب الفيديوهات.",
         "error_notify_body": "⚠️ خطأ أثناء المعالجة:\n{title}\n{error}",
+
+        # ── Phase 7.3b ──
+        "pipeline_err_video_id_extract": "تعذّر استخراج مُعرِّف الفيديو من الرابط.",
+        "pipeline_err_video_already_processed": "تمت معالجة هذا الفيديو سابقاً.",
+        "pipeline_err_transcript_unavailable": "النص غير متوفر لـ: {title}",
+        "pipeline_err_article_already_processed": "تمت معالجة هذا المقال سابقاً.",
+        "pipeline_err_web_extract_failed": (
+            "تعذّر استخراج المحتوى من هذه الصفحة.\n"
+            "قد يتطلب الموقع JavaScript أو يحظر الجمع."
+        ),
+        "pipeline_err_unknown_source_type": "نوع محتوى غير معروف: {source_type}",
+        "pipeline_err_summarize_failed": "تعذّر توليد ملخص لـ: {title}",
     },
 }
 

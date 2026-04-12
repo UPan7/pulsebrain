@@ -9,8 +9,10 @@ from src.categorize import categorize_content
 from src.extractors.web import extract_web_article
 from src.extractors.youtube import get_transcript, get_video_metadata
 from src.pending import stage_pending
+from src.profile import get_language
 from src.router import extract_video_id
 from src.storage import is_processed, make_content_id, mark_processed
+from src.strings import t
 from src.summarize import summarize_content
 
 logger = logging.getLogger(__name__)
@@ -25,16 +27,19 @@ def _process_content(
     """Shared pipeline for any content type.
 
     Returns dict with entry info on success, or dict with 'error' key on failure.
+    Error strings are rendered in the current profile language via t().
     """
+    lang = get_language()
+
     # ── Extract ─────────────────────────────────────────────────────────────
     if source_type == "youtube_video":
         video_id = extract_video_id(url)
         if not video_id:
-            return {"error": "Не удалось извлечь ID видео из ссылки."}
+            return {"error": t("pipeline_err_video_id_extract", lang)}
 
         content_id = make_content_id("youtube_video", video_id)
         if is_processed(content_id):
-            return {"error": "Это видео уже обработано."}
+            return {"error": t("pipeline_err_video_already_processed", lang)}
 
         meta = get_video_metadata(video_id)
         title = meta["title"] or f"Video {video_id}"
@@ -43,19 +48,16 @@ def _process_content(
 
         content = get_transcript(video_id)
         if not content:
-            return {"error": f"Транскрипт недоступен для: {title}"}
+            return {"error": t("pipeline_err_transcript_unavailable", lang, title=title)}
 
     elif source_type == "web_article":
         content_id = make_content_id("web_article", url)
         if is_processed(content_id):
-            return {"error": "Эта статья уже обработана."}
+            return {"error": t("pipeline_err_article_already_processed", lang)}
 
         article = extract_web_article(url)
         if not article:
-            return {
-                "error": "Не удалось извлечь контент с этой страницы.\n"
-                "Возможно, сайт требует JavaScript или блокирует парсинг."
-            }
+            return {"error": t("pipeline_err_web_extract_failed", lang)}
 
         title = article["title"] or url
         author = article["author"]
@@ -64,7 +66,7 @@ def _process_content(
         source_name = sitename or url.split("/")[2] if "/" in url else url
         content = article["text"]
     else:
-        return {"error": f"Неизвестный тип контента: {source_type}"}
+        return {"error": t("pipeline_err_unknown_source_type", lang, source_type=source_type)}
 
     # ── Summarize ───────────────────────────────────────────────────────────
     summary = summarize_content(
@@ -75,7 +77,7 @@ def _process_content(
         date=date_str,
     )
     if not summary:
-        return {"error": f"Не удалось создать саммари для: {title}"}
+        return {"error": t("pipeline_err_summarize_failed", lang, title=title)}
 
     # ── Categorize ──────────────────────────────────────────────────────────
     # User-supplied category wins; otherwise run the dynamic categorizer.

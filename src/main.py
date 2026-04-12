@@ -44,12 +44,14 @@ def main() -> None:
     _ensure_directories()
 
     from src.pending import init_pending
+    from src.profile import init_profile
     from src.scheduler import setup_scheduler
     from src.storage import init_processed
     from src.telegram_bot import create_bot_application
 
     init_processed()
     init_pending()
+    init_profile()
 
     # Scheduler is configured here but started only after the event loop is running
     scheduler_holder: list = []

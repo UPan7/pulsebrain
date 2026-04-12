@@ -43,6 +43,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     processed = data / "processed.json"
     pending = data / "pending.json"
     rejected_log = data / "rejected_log.jsonl"
+    profile = data / "user_profile.yaml"
     categories = data / "categories.yml"
     channels = tmp_path / "channels.yml"
 
@@ -52,6 +53,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "PROCESSED_FILE": processed,
         "PENDING_FILE": pending,
         "REJECTED_LOG_FILE": rejected_log,
+        "PROFILE_FILE": profile,
         "CATEGORIES_FILE": categories,
         "CHANNELS_FILE": channels,
     }
@@ -60,6 +62,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import src.config
     import src.storage
     import src.pending
+    import src.profile
 
     for attr, val in targets.items():
         monkeypatch.setattr(src.config, attr, val)
@@ -67,6 +70,8 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             monkeypatch.setattr(src.storage, attr, val)
         if hasattr(src.pending, attr):
             monkeypatch.setattr(src.pending, attr, val)
+        if hasattr(src.profile, attr):
+            monkeypatch.setattr(src.profile, attr, val)
 
     # Reset storage caches so tests start clean
     if hasattr(src.storage, "_processed_cache"):
@@ -74,6 +79,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     if hasattr(src.storage, "_entry_cache"):
         monkeypatch.setattr(src.storage, "_entry_cache", None)
     monkeypatch.setattr(src.pending, "_pending_cache", None)
+    monkeypatch.setattr(src.profile, "_profile_cache", None)
 
     return tmp_path
 

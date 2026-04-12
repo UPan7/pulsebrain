@@ -29,6 +29,12 @@ Thumbs.db
 # Docker
 *.log
 
+# Test coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # Cookies (sensitive — never commit)
 cookies.txt
 *.cookies.txt

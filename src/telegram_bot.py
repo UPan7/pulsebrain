@@ -27,9 +27,16 @@ from src.config import (
     save_channels,
 )
 from src.extractors.youtube import get_recent_video_ids, resolve_channel_id
+from src.pending import (
+    commit_pending,
+    get_pending,
+    list_pending,
+    reject_pending,
+    update_pending_category,
+)
 from src.pipeline import process_web_article, process_youtube_video
 from src.router import SourceType, detect_source_type
-from src.storage import get_recent_entries, get_stats, move_entry, search_for_question, search_knowledge
+from src.storage import get_recent_entries, get_stats, search_for_question, search_knowledge
 from src.summarize import answer_question
 
 logger = logging.getLogger(__name__)
@@ -46,6 +53,82 @@ def _truncate_message(text: str, limit: int = _TELEGRAM_MSG_LIMIT) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+# ── Content-type-agnostic pending rendering ────────────────────────────────
+
+# Header emoji per source_type. New formats (PDF, podcast, …) just register
+# a new key here; everything else stays as is.
+_SOURCE_ICONS: dict[str, str] = {
+    "youtube_video": "📺",
+    "web_article": "📰",
+}
+
+
+def _render_pending_message(entry: dict[str, Any]) -> str:
+    """Format a pending registry entry as a Telegram message body.
+
+    Format-agnostic — branches only on source_type to pick the header emoji
+    and the source line. Adding new content types means adding to
+    _SOURCE_ICONS and (optionally) the source-line block below.
+    """
+    icon = _SOURCE_ICONS.get(entry.get("source_type", ""), "📄")
+    title = entry.get("title", "?")
+    date = entry.get("date_str") or "?"
+
+    if entry.get("source_type") == "youtube_video":
+        source_line = f"by {entry.get('source_name', '?')} | {date}"
+    else:
+        source_line = f"{entry.get('sitename') or entry.get('source_name', '?')} | {date}"
+
+    bullets = "\n".join(f"• {b}" for b in entry.get("summary_bullets", []))
+    topics_str = " ".join(f"#{t}" for t in entry.get("topics", []))
+
+    cat_line = f"📂 Категория: {entry.get('category', '?')}"
+    if entry.get("is_new_category"):
+        cat_line += " 🆕 (новая!)"
+
+    return (
+        f"{icon} {title}\n"
+        f"{source_line}\n\n"
+        f"📋 Саммари:\n{bullets}\n\n"
+        f"{cat_line}\n"
+        f"🏷 {topics_str}\n"
+        f"📊 Релевантность: {entry.get('relevance', '?')}/10\n"
+        f"⏳ Ожидает подтверждения"
+    )
+
+
+def _pending_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    """Approve / reject / change-category keyboard for a staged entry."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Сохранить", callback_data=f"psave:{pending_id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"pskip:{pending_id}"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Категория", callback_data=f"pcat:{pending_id}"),
+        ],
+    ])
+
+
+def _pending_category_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    """Grid of category buttons for re-categorising a pending entry."""
+    categories = load_categories()
+    buttons: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for slug in categories:
+        row.append(InlineKeyboardButton(slug, callback_data=f"psetc:{pending_id}:{slug}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([
+        InlineKeyboardButton("➕ Новая категория",
+                             callback_data=f"psetc:{pending_id}:__new__"),
+    ])
+    return InlineKeyboardMarkup(buttons)
 
 
 # ── Security: chat ID filter ────────────────────────────────────────────────
@@ -83,6 +166,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/categories — Категории с количеством записей\n"
         "/search <запрос> — Поиск по базе знаний\n"
         "/recent [N] — Последние N записей (по умолч. 5)\n"
+        "/pending — Записи на подтверждение\n"
         "/status — Состояние бота\n"
         "/run — Запустить проверку каналов\n"
         "/stats — Подробная статистика\n"
@@ -303,11 +387,30 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     from src.scheduler import run_channel_check
 
-    results = await run_channel_check()
+    results = await run_channel_check(app=context.application)
     if results:
         await update.message.reply_text(f"✅ Обработано {results} новых видео.")
     else:
         await update.message.reply_text("✅ Новых видео не найдено.")
+
+
+async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List currently-staged entries awaiting approval (newest 10)."""
+    if not _authorized(update):
+        return
+    entries = list_pending()
+    if not entries:
+        await update.message.reply_text("📭 Очередь на подтверждение пуста.")
+        return
+
+    await update.message.reply_text(
+        f"⏳ В очереди: {len(entries)} (показываю последние 10)"
+    )
+    for entry in entries[:10]:
+        await update.message.reply_text(
+            _truncate_message(_render_pending_message(entry)),
+            reply_markup=_pending_keyboard(entry["id"]),
+        )
 
 
 # ── Link drop handler ────────────────────────────────────────────────────────
@@ -357,34 +460,16 @@ async def _handle_youtube_video(
         await msg.edit_text(f"⚠️ {result['error']}")
         return
 
-    topics_str = " ".join(f"#{t}" for t in result.get("topics", []))
-    bullets = "\n".join(f"• {b}" for b in result.get("summary_bullets", []))
-    rel_path = os.path.relpath(result["file_path"], start="/app")
+    pending_id = result["pending_id"]
+    entry = get_pending(pending_id)
+    if entry is None:
+        await msg.edit_text("⚠️ Запись не найдена в очереди.")
+        return
 
-    cat_line = f"📂 Категория: {result['category']}"
-    if result.get("is_new_category"):
-        cat_line += " 🆕 (новая!)"
-
-    text = (
-        f"📺 {result['title']}\n"
-        f"by {result['channel']} | {result.get('date', '?')}\n\n"
-        f"📋 Саммари:\n{bullets}\n\n"
-        f"{cat_line}\n"
-        f"🏷 {topics_str}\n"
-        f"📊 Релевантность: {result['relevance']}/10\n"
-        f"💾 Сохранено: {rel_path}"
+    await msg.edit_text(
+        _truncate_message(_render_pending_message(entry)),
+        reply_markup=_pending_keyboard(pending_id),
     )
-
-    # Store result for potential category change
-    context.user_data["last_result"] = result
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ OK", callback_data="cat_ok"),
-            InlineKeyboardButton("🔄 Изменить", callback_data="cat_change"),
-        ]
-    ])
-    await msg.edit_text(_truncate_message(text), reply_markup=keyboard)
 
 
 async def _handle_youtube_channel(
@@ -432,36 +517,16 @@ async def _handle_web_article(
         await msg.edit_text(f"⚠️ {result['error']}")
         return
 
-    topics_str = " ".join(f"#{t}" for t in result.get("topics", []))
-    bullets = "\n".join(f"• {b}" for b in result.get("summary_bullets", []))
-    rel_path = os.path.relpath(result["file_path"], start="/app")
+    pending_id = result["pending_id"]
+    entry = get_pending(pending_id)
+    if entry is None:
+        await msg.edit_text("⚠️ Запись не найдена в очереди.")
+        return
 
-    source_line = result.get("sitename") or result.get("source_name", "")
-    date_line = result.get("date", "?")
-
-    cat_line = f"📂 Категория: {result['category']}"
-    if result.get("is_new_category"):
-        cat_line += " 🆕 (новая!)"
-
-    text = (
-        f"📰 {result['title']}\n"
-        f"{source_line} | {date_line}\n\n"
-        f"📋 Саммари:\n{bullets}\n\n"
-        f"{cat_line}\n"
-        f"🏷 {topics_str}\n"
-        f"📊 Релевантность: {result['relevance']}/10\n"
-        f"💾 Сохранено: {rel_path}"
+    await msg.edit_text(
+        _truncate_message(_render_pending_message(entry)),
+        reply_markup=_pending_keyboard(pending_id),
     )
-
-    context.user_data["last_result"] = result
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ OK", callback_data="cat_ok"),
-            InlineKeyboardButton("🔄 Изменить", callback_data="cat_change"),
-        ]
-    ])
-    await msg.edit_text(_truncate_message(text), reply_markup=keyboard)
 
 
 # ── Question handler ──────────────────────────────────────────────────────────
@@ -549,10 +614,17 @@ async def _handle_new_category_input(
                 ]
             ]),
         )
-    elif action == "recat":
+    elif action.startswith("pending:"):
+        pending_id = action.split(":", 1)[1]
+        if not update_pending_category(pending_id, clean_slug, is_new_category=True):
+            await update.message.reply_text(
+                f"✅ Категория `{clean_slug}` создана, но запись больше не в очереди."
+            )
+            return
+        entry = get_pending(pending_id)
         await update.message.reply_text(
-            f"✅ Категория `{clean_slug}` создана и применена.\n"
-            "(Файл будет перемещён при следующей обработке)"
+            _truncate_message(_render_pending_message(entry)),
+            reply_markup=_pending_keyboard(pending_id),
         )
 
 
@@ -583,45 +655,88 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     data = query.data
 
-    if data == "cat_ok":
-        # User confirmed category — register if new
-        last = context.user_data.get("last_result", {})
-        if last.get("is_new_category"):
-            cat = last["category"]
+    # ── Pending approval flow ───────────────────────────────────────────────
+    if data.startswith("psave:"):
+        pending_id = data.split(":", 1)[1]
+        entry = get_pending(pending_id)
+        if entry is None:
+            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            return
+        if entry.get("is_new_category"):
+            cat = entry["category"]
             add_category(cat, cat.replace("-", " ").title())
-        await query.edit_message_reply_markup(reply_markup=None)
+        file_path = await asyncio.to_thread(commit_pending, pending_id)
+        if file_path is None:
+            await query.edit_message_text("⚠️ Не удалось сохранить запись.")
+            return
+        rel_path = os.path.relpath(str(file_path), start="/app")
+        await query.edit_message_text(
+            _truncate_message(
+                f"{_render_pending_message(entry)}\n\n✅ Сохранено: {rel_path}"
+            ),
+            reply_markup=None,
+        )
+        return
 
-    elif data == "cat_change":
-        # Show category selection
-        keyboard = _category_keyboard("recat")
-        await query.edit_message_reply_markup(reply_markup=keyboard)
+    if data.startswith("pskip:"):
+        pending_id = data.split(":", 1)[1]
+        entry = get_pending(pending_id)
+        if entry is None:
+            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            return
+        reject_pending(pending_id)
+        await query.edit_message_text(
+            _truncate_message(
+                f"{_render_pending_message(entry)}\n\n❌ Отклонено"
+            ),
+            reply_markup=None,
+        )
+        return
 
-    elif data.startswith("add_channel:__new__") or data.startswith("recat:__new__"):
-        # User wants to create a new category — ask for slug
-        action = "add_channel" if data.startswith("add_channel") else "recat"
-        context.user_data["waiting_new_category"] = action
+    if data.startswith("pcat:"):
+        pending_id = data.split(":", 1)[1]
+        if get_pending(pending_id) is None:
+            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            return
+        await query.edit_message_reply_markup(
+            reply_markup=_pending_category_keyboard(pending_id),
+        )
+        return
+
+    if data.startswith("psetc:"):
+        # psetc:{pending_id}:{slug_or___new__}
+        _, pending_id, slug = data.split(":", 2)
+        if slug == "__new__":
+            context.user_data["waiting_new_category"] = f"pending:{pending_id}"
+            await query.edit_message_reply_markup(reply_markup=None)
+            await query.message.reply_text(
+                "✏️ Введи slug новой категории (например: `machine-learning`).\n"
+                "Можно через пробел добавить описание:\n"
+                "`machine-learning Machine Learning & Deep Learning`"
+            )
+            return
+        if not update_pending_category(pending_id, slug):
+            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            return
+        entry = get_pending(pending_id)
+        await query.edit_message_text(
+            _truncate_message(_render_pending_message(entry)),
+            reply_markup=_pending_keyboard(pending_id),
+        )
+        return
+
+    # ── Channel-add flow ────────────────────────────────────────────────────
+    if data.startswith("add_channel:__new__"):
+        context.user_data["waiting_new_category"] = "add_channel"
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
             "✏️ Введи slug новой категории (например: `machine-learning`).\n"
             "Можно через пробел добавить описание:\n"
             "`machine-learning Machine Learning & Deep Learning`"
         )
+        return
 
-    elif data.startswith("recat:"):
-        new_category = data.split(":", 1)[1]
-        last = context.user_data.get("last_result", {})
-        old_path = last.get("file_path")
-        await query.edit_message_reply_markup(reply_markup=None)
-        if old_path:
-            new_path = move_entry(old_path, new_category)
-            if new_path:
-                await query.message.reply_text(f"📂 Категория изменена на: {new_category}\n💾 Файл перемещён.")
-            else:
-                await query.message.reply_text(f"📂 Категория: {new_category}\n⚠️ Файл не найден для перемещения.")
-        else:
-            await query.message.reply_text(f"📂 Категория изменена на: {new_category}")
-
-    elif data.startswith("add_channel:"):
+    if data.startswith("add_channel:"):
         category = data.split(":", 1)[1]
         pending = context.user_data.get("pending_channel")
         if not pending:
@@ -676,33 +791,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 # ── Notification helper ──────────────────────────────────────────────────────
 
 async def send_notification(app: Application, result: dict[str, Any]) -> None:
-    """Send a processed entry notification to the configured chat."""
-    if result.get("source_type") == "youtube_video":
-        topics_str = " ".join(f"#{t}" for t in result.get("topics", []))
-        bullets = "\n".join(f"• {b}" for b in result.get("summary_bullets", []))
+    """Send a staged-entry notification with the approve/reject keyboard.
 
-        text = (
-            f"📺 {result.get('channel', '?')}\n"
-            f"{result['title']}\n\n"
-            f"📋 Саммари:\n{bullets}\n\n"
-            f"🏷 {topics_str}\n"
-            f"📊 Релевантность: {result.get('relevance', '?')}/10\n"
-            f"🔗 {result.get('source_url', '')}"
-        )
-    else:
-        topics_str = " ".join(f"#{t}" for t in result.get("topics", []))
-        bullets = "\n".join(f"• {b}" for b in result.get("summary_bullets", []))
+    Format-agnostic — looks up the pending entry by id and reuses the same
+    renderer + keyboard the inline handlers use.
+    """
+    pending_id = result.get("pending_id")
+    if not pending_id:
+        return
+    entry = get_pending(pending_id)
+    if entry is None:
+        return
 
-        text = (
-            f"📰 {result['title']}\n"
-            f"{result.get('sitename', result.get('source_name', '?'))}\n\n"
-            f"📋 Саммари:\n{bullets}\n\n"
-            f"🏷 {topics_str}\n"
-            f"📊 Релевантность: {result.get('relevance', '?')}/10\n"
-            f"🔗 {result.get('source_url', '')}"
-        )
-
-    await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=_truncate_message(text))
+    await app.bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=_truncate_message(_render_pending_message(entry)),
+        reply_markup=_pending_keyboard(pending_id),
+    )
 
 
 async def send_error_notification(app: Application, title: str, error: str) -> None:
@@ -734,6 +839,7 @@ def create_bot_application(post_init=None) -> Application:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("run", cmd_run))
+    app.add_handler(CommandHandler("pending", cmd_pending))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(callback_handler))

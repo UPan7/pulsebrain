@@ -125,6 +125,29 @@ async def test_handle_message_routes_question():
 # ── Async non-blocking: asyncio.to_thread must be used ─────────────────────
 
 
+def _fake_pending_entry(source_type="youtube_video"):
+    return {
+        "id": "deadbeef",
+        "content_id": "yt:x",
+        "source_url": "https://example.com/x",
+        "source_type": source_type,
+        "source_name": "TestSource",
+        "title": "Test Title",
+        "date_str": "2025-06-15",
+        "category": "ai-news",
+        "is_new_category": False,
+        "relevance": 7,
+        "topics": ["t"],
+        "summary_bullets": ["b"],
+        "detailed_notes": "n",
+        "key_insights": ["i"],
+        "action_items": ["a"],
+        "author": None,
+        "sitename": "example.com" if source_type == "web_article" else None,
+        "created_at": "2025-06-15T12:00:00",
+    }
+
+
 @pytest.mark.asyncio
 async def test_handle_youtube_video_uses_to_thread():
     """_handle_youtube_video wraps process_youtube_video in asyncio.to_thread."""
@@ -133,15 +156,13 @@ async def test_handle_youtube_video_uses_to_thread():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
 
-    fake_result = {
-        "title": "T", "channel": "C", "date": "2025-01-01",
-        "category": "ai-news", "relevance": 7,
-        "topics": ["t"], "summary_bullets": ["b"],
-        "file_path": "/app/knowledge/ai-news/2025/01/test.md",
-        "source_url": "https://youtube.com/watch?v=x", "source_type": "youtube_video",
-    }
+    fake_result = {"pending_id": "deadbeef", "title": "T",
+                   "category": "ai-news", "source_type": "youtube_video"}
 
-    with patch("src.telegram_bot.asyncio.to_thread", new_callable=AsyncMock, return_value=fake_result) as mock_tt:
+    with (
+        patch("src.telegram_bot.asyncio.to_thread", new_callable=AsyncMock, return_value=fake_result) as mock_tt,
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+    ):
         await _handle_youtube_video(update, ctx, "https://youtube.com/watch?v=x")
         mock_tt.assert_called_once()
         # First arg to to_thread should be the pipeline function
@@ -158,16 +179,13 @@ async def test_handle_web_article_uses_to_thread():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
 
-    fake_result = {
-        "title": "T", "source_name": "example.com",
-        "date": "2025-01-01", "category": "ai-news", "relevance": 7,
-        "topics": ["t"], "summary_bullets": ["b"],
-        "file_path": "/app/knowledge/ai-news/2025/01/test.md",
-        "source_url": "https://example.com/article", "source_type": "web_article",
-        "sitename": "example.com", "author": None,
-    }
+    fake_result = {"pending_id": "deadbeef", "title": "T",
+                   "category": "ai-news", "source_type": "web_article"}
 
-    with patch("src.telegram_bot.asyncio.to_thread", new_callable=AsyncMock, return_value=fake_result) as mock_tt:
+    with (
+        patch("src.telegram_bot.asyncio.to_thread", new_callable=AsyncMock, return_value=fake_result) as mock_tt,
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry("web_article")),
+    ):
         await _handle_web_article(update, ctx, "https://example.com/article")
         mock_tt.assert_called_once()
         args = mock_tt.call_args[0]
@@ -212,7 +230,7 @@ def test_truncate_with_unicode():
     [
         "cmd_start", "cmd_help", "cmd_list", "cmd_add", "cmd_remove",
         "cmd_categories", "cmd_search", "cmd_recent", "cmd_status",
-        "cmd_stats", "cmd_run", "handle_message",
+        "cmd_stats", "cmd_run", "cmd_pending", "handle_message",
     ],
 )
 async def test_unauthorized_short_circuits_every_command(handler_name):
@@ -634,6 +652,42 @@ async def test_cmd_run_no_new_videos():
     assert "не найдено" in last_text
 
 
+@pytest.mark.asyncio
+async def test_cmd_pending_empty():
+    from src.telegram_bot import cmd_pending
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.list_pending", return_value=[]),
+    ):
+        await cmd_pending(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "пуста" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_pending_lists_entries():
+    from src.telegram_bot import cmd_pending
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    entries = [_fake_pending_entry(), {**_fake_pending_entry(), "id": "cafef00d", "title": "Second"}]
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.list_pending", return_value=entries),
+    ):
+        await cmd_pending(update, ctx)
+
+    # Header + one message per entry
+    assert update.message.reply_text.call_count == 3
+    # Each entry's reply has the keyboard attached
+    for call in update.message.reply_text.call_args_list[1:]:
+        assert "reply_markup" in call.kwargs
+
+
 # ── URL handlers ───────────────────────────────────────────────────────────
 
 
@@ -836,17 +890,40 @@ async def test_handle_new_category_input_persists_and_adds_channel():
 
 
 @pytest.mark.asyncio
-async def test_handle_new_category_input_recat():
+async def test_handle_new_category_input_pending_branch():
+    """The 'pending:{id}' action updates the staged entry and re-renders."""
     from src.telegram_bot import _handle_new_category_input
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.add_category") as mock_add:
-        await _handle_new_category_input(update, ctx, "robotics", "recat")
+    with (
+        patch("src.telegram_bot.add_category") as mock_add,
+        patch("src.telegram_bot.update_pending_category", return_value=True) as mock_upd,
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+    ):
+        await _handle_new_category_input(update, ctx, "robotics", "pending:deadbeef")
 
     mock_add.assert_called_once_with("robotics", "Robotics")
+    mock_upd.assert_called_once_with("deadbeef", "robotics", is_new_category=True)
+    # The reply has the new keyboard attached
+    last_kwargs = update.message.reply_text.call_args_list[-1][1]
+    assert "reply_markup" in last_kwargs
+
+
+@pytest.mark.asyncio
+async def test_handle_new_category_input_pending_lost_entry():
+    from src.telegram_bot import _handle_new_category_input
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.add_category"),
+        patch("src.telegram_bot.update_pending_category", return_value=False),
+    ):
+        await _handle_new_category_input(update, ctx, "robotics", "pending:deadbeef")
+
     text = update.message.reply_text.call_args[0][0]
-    assert "robotics" in text
+    assert "больше не в очереди" in text
 
 
 @pytest.mark.asyncio
@@ -893,82 +970,159 @@ async def test_callback_no_query_returns_silently():
 
 
 @pytest.mark.asyncio
-async def test_callback_cat_ok_persists_new_category():
+async def test_callback_psave_commits_and_persists_new_category():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="cat_ok")
-    ctx = _make_context(user_data={"last_result": {"is_new_category": True, "category": "robotics"}})
-    with patch("src.telegram_bot.add_category") as mock_add:
+    update = _make_callback_update(data="psave:deadbeef")
+    ctx = _make_context()
+    entry = _fake_pending_entry()
+    entry["is_new_category"] = True
+    entry["category"] = "robotics"
+    with (
+        patch("src.telegram_bot.get_pending", return_value=entry),
+        patch("src.telegram_bot.add_category") as mock_add,
+        patch("src.telegram_bot.asyncio.to_thread",
+              new_callable=AsyncMock,
+              return_value="/app/knowledge/robotics/2025/06/x.md") as mock_tt,
+    ):
         await callback_handler(update, ctx)
 
     mock_add.assert_called_once()
-    update.callback_query.edit_message_reply_markup.assert_called_with(reply_markup=None)
+    mock_tt.assert_called_once()
+    # First positional arg of to_thread should be commit_pending
+    from src.pending import commit_pending
+    assert mock_tt.call_args[0][0] is commit_pending
+    update.callback_query.edit_message_text.assert_called_once()
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "Сохранено" in text
 
 
 @pytest.mark.asyncio
-async def test_callback_cat_ok_no_new_category():
-    """cat_ok with last_result that's not a new category — no add_category call."""
+async def test_callback_psave_unknown_id():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="cat_ok")
-    ctx = _make_context(user_data={"last_result": {"is_new_category": False, "category": "ai-news"}})
-    with patch("src.telegram_bot.add_category") as mock_add:
+    update = _make_callback_update(data="psave:deadbeef")
+    ctx = _make_context()
+    with patch("src.telegram_bot.get_pending", return_value=None):
         await callback_handler(update, ctx)
 
-    mock_add.assert_not_called()
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "больше не в очереди" in text
 
 
 @pytest.mark.asyncio
-async def test_callback_cat_change_shows_keyboard():
+async def test_callback_psave_commit_fails():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="cat_change")
+    update = _make_callback_update(data="psave:deadbeef")
     ctx = _make_context()
-    with patch("src.telegram_bot.load_categories", return_value={"ai-news": "AI"}):
+    with (
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+        patch("src.telegram_bot.asyncio.to_thread", new_callable=AsyncMock, return_value=None),
+    ):
+        await callback_handler(update, ctx)
+
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "Не удалось" in text
+
+
+@pytest.mark.asyncio
+async def test_callback_pskip_rejects_entry():
+    from src.telegram_bot import callback_handler
+
+    update = _make_callback_update(data="pskip:deadbeef")
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+        patch("src.telegram_bot.reject_pending", return_value=True) as mock_rej,
+    ):
+        await callback_handler(update, ctx)
+
+    mock_rej.assert_called_once_with("deadbeef")
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "Отклонено" in text
+
+
+@pytest.mark.asyncio
+async def test_callback_pskip_unknown_id():
+    from src.telegram_bot import callback_handler
+
+    update = _make_callback_update(data="pskip:deadbeef")
+    ctx = _make_context()
+    with patch("src.telegram_bot.get_pending", return_value=None):
+        await callback_handler(update, ctx)
+
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "больше не в очереди" in text
+
+
+@pytest.mark.asyncio
+async def test_callback_pcat_shows_category_keyboard():
+    from src.telegram_bot import callback_handler
+
+    update = _make_callback_update(data="pcat:deadbeef")
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+        patch("src.telegram_bot.load_categories", return_value={"ai-news": "AI"}),
+    ):
         await callback_handler(update, ctx)
 
     update.callback_query.edit_message_reply_markup.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_callback_recat_moves_file():
+async def test_callback_pcat_unknown_id():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="recat:robotics")
-    ctx = _make_context(user_data={"last_result": {"file_path": "/old/path.md"}})
-    with patch("src.telegram_bot.move_entry", return_value="/new/path.md") as mock_move:
+    update = _make_callback_update(data="pcat:deadbeef")
+    ctx = _make_context()
+    with patch("src.telegram_bot.get_pending", return_value=None):
         await callback_handler(update, ctx)
 
-    mock_move.assert_called_once_with("/old/path.md", "robotics")
-    text = update.callback_query.message.reply_text.call_args[0][0]
-    assert "Файл перемещён" in text
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "больше не в очереди" in text
 
 
 @pytest.mark.asyncio
-async def test_callback_recat_move_fails():
+async def test_callback_psetc_updates_category():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="recat:robotics")
-    ctx = _make_context(user_data={"last_result": {"file_path": "/old/path.md"}})
-    with patch("src.telegram_bot.move_entry", return_value=None):
+    update = _make_callback_update(data="psetc:deadbeef:robotics")
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.update_pending_category", return_value=True) as mock_upd,
+        patch("src.telegram_bot.get_pending", return_value=_fake_pending_entry()),
+    ):
         await callback_handler(update, ctx)
 
-    text = update.callback_query.message.reply_text.call_args[0][0]
-    assert "не найден" in text
+    mock_upd.assert_called_once_with("deadbeef", "robotics")
+    update.callback_query.edit_message_text.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_callback_recat_no_file_path():
+async def test_callback_psetc_new_category_prompts_for_slug():
     from src.telegram_bot import callback_handler
 
-    update = _make_callback_update(data="recat:robotics")
-    ctx = _make_context(user_data={"last_result": {}})
-    with patch("src.telegram_bot.move_entry") as mock_move:
+    update = _make_callback_update(data="psetc:deadbeef:__new__")
+    ctx = _make_context()
+    await callback_handler(update, ctx)
+
+    assert ctx.user_data["waiting_new_category"] == "pending:deadbeef"
+    update.callback_query.message.reply_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_callback_psetc_unknown_id():
+    from src.telegram_bot import callback_handler
+
+    update = _make_callback_update(data="psetc:deadbeef:robotics")
+    ctx = _make_context()
+    with patch("src.telegram_bot.update_pending_category", return_value=False):
         await callback_handler(update, ctx)
 
-    mock_move.assert_not_called()
-    text = update.callback_query.message.reply_text.call_args[0][0]
-    assert "robotics" in text
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "больше не в очереди" in text
 
 
 @pytest.mark.asyncio
@@ -1014,17 +1168,6 @@ async def test_callback_new_category_prompt_add_channel():
 
 
 @pytest.mark.asyncio
-async def test_callback_new_category_prompt_recat():
-    from src.telegram_bot import callback_handler
-
-    update = _make_callback_update(data="recat:__new__")
-    ctx = _make_context()
-    await callback_handler(update, ctx)
-
-    assert ctx.user_data["waiting_new_category"] == "recat"
-
-
-@pytest.mark.asyncio
 async def test_callback_fetch_recent_processes_videos():
     from src.telegram_bot import callback_handler
 
@@ -1064,14 +1207,17 @@ async def test_send_notification_youtube_format():
 
     app = MagicMock()
     app.bot.send_message = AsyncMock()
-    result = {
-        "source_type": "youtube_video",
-        "title": "T", "channel": "Ch",
-        "summary_bullets": ["b1", "b2"],
-        "topics": ["ai"], "relevance": 8,
-        "source_url": "https://yt/watch?v=x",
-    }
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    result = {"pending_id": "deadbeef"}
+    entry = _fake_pending_entry()
+    entry["source_name"] = "Ch"
+    entry["title"] = "T"
+    entry["summary_bullets"] = ["b1", "b2"]
+    entry["topics"] = ["ai"]
+    entry["relevance"] = 8
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.get_pending", return_value=entry),
+    ):
         await send_notification(app, result)
 
     text = app.bot.send_message.call_args.kwargs["text"]
@@ -1079,6 +1225,8 @@ async def test_send_notification_youtube_format():
     assert "T" in text
     assert "b1" in text
     assert "#ai" in text
+    # Approve/reject keyboard attached
+    assert app.bot.send_message.call_args.kwargs.get("reply_markup") is not None
 
 
 @pytest.mark.asyncio
@@ -1087,18 +1235,45 @@ async def test_send_notification_web_format():
 
     app = MagicMock()
     app.bot.send_message = AsyncMock()
-    result = {
-        "source_type": "web_article",
-        "title": "Web Title", "sitename": "example.com",
-        "summary_bullets": ["b1"], "topics": ["web"], "relevance": 7,
-        "source_url": "https://example.com/x",
-    }
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    result = {"pending_id": "deadbeef"}
+    entry = _fake_pending_entry("web_article")
+    entry["title"] = "Web Title"
+    entry["sitename"] = "example.com"
+    entry["summary_bullets"] = ["b1"]
+    entry["topics"] = ["web"]
+    entry["relevance"] = 7
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.get_pending", return_value=entry),
+    ):
         await send_notification(app, result)
 
     text = app.bot.send_message.call_args.kwargs["text"]
     assert "Web Title" in text
     assert "example.com" in text
+
+
+@pytest.mark.asyncio
+async def test_send_notification_silent_when_no_pending_id():
+    from src.telegram_bot import send_notification
+
+    app = MagicMock()
+    app.bot.send_message = AsyncMock()
+    await send_notification(app, {"title": "no pid"})
+
+    app.bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_notification_silent_when_entry_dropped():
+    from src.telegram_bot import send_notification
+
+    app = MagicMock()
+    app.bot.send_message = AsyncMock()
+    with patch("src.telegram_bot.get_pending", return_value=None):
+        await send_notification(app, {"pending_id": "deadbeef"})
+
+    app.bot.send_message.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1130,5 +1305,5 @@ def test_create_bot_application_registers_handlers():
         app = create_bot_application()
 
     assert app is fake_app
-    # 11 commands + 1 callback + 1 message = 13 handlers
-    assert fake_app.add_handler.call_count == 13
+    # 12 commands (incl. /pending) + 1 callback + 1 message = 14 handlers
+    assert fake_app.add_handler.call_count == 14

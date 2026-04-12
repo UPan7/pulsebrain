@@ -461,8 +461,8 @@ def _fake_app_with_bot():
 
 
 @pytest.mark.asyncio
-async def test_round_digest_sent_on_empty_run():
-    """Zero videos across all channels still produces a digest with 0/0/0."""
+async def test_round_digest_silent_on_empty_run():
+    """Phase 6.1: zero counters → no digest at all (silent empty run)."""
     from src.scheduler import run_channel_check
 
     channels = [
@@ -478,13 +478,51 @@ async def test_round_digest_sent_on_empty_run():
     ):
         await run_channel_check(app=app)
 
+    app.bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_round_digest_sent_when_only_rejected():
+    """Zero processed but non-zero rejected → digest still fires."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+    app = _fake_app_with_bot()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "Meh", "pending_id": "dead", "relevance": 2}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 5),
+        patch("src.scheduler.reject_pending", return_value=True),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(app=app)
+
     app.bot.send_message.assert_called_once()
-    _, kwargs = app.bot.send_message.call_args
-    text = kwargs["text"]
-    assert "Каналов проверено: 2" in text
-    assert "Новых в /pending: 0" in text
-    assert "Авто-отклонено: 0" in text
-    assert "Ошибок: 0" in text
+
+
+@pytest.mark.asyncio
+async def test_round_digest_sent_when_only_failed():
+    """Zero processed but non-zero failed → digest still fires."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+    app = _fake_app_with_bot()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"error": "no transcript"}),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(app=app)
+
+    app.bot.send_message.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -546,13 +584,18 @@ async def test_round_digest_swallows_send_failures():
     from src.scheduler import run_channel_check
 
     channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
     app = MagicMock()
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock(side_effect=RuntimeError("telegram down"))
 
+    # Use a non-empty run so the digest actually tries to send (Phase 6.1
+    # silences true-empty runs — they'd never hit send_message at all).
     with (
         patch("src.scheduler.load_channels", return_value=channels),
-        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"error": "no transcript"}),
         patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
     ):
         # Should not propagate the RuntimeError
@@ -564,19 +607,29 @@ async def test_round_digest_swallows_send_failures():
 
 @pytest.mark.asyncio
 async def test_round_digest_counts_only_enabled_channels():
-    """channels_checked ignores disabled ones."""
+    """channels_checked ignores disabled ones (proof via a non-empty run)."""
     from src.scheduler import run_channel_check
 
+    # Two enabled + one disabled. Use a non-empty video on one of the
+    # enabled channels so the digest actually fires (Phase 6.1 silences
+    # true-empty runs).
     channels = [
         {"name": "A", "id": "UC_a", "category": "ai-news", "enabled": True},
         {"name": "B", "id": "UC_b", "category": "ai-news", "enabled": False},
         {"name": "C", "id": "UC_c", "category": "ai-news", "enabled": True},
     ]
+    videos = [_make_video("v1")]
     app = _fake_app_with_bot()
+
+    def fake_fetch(channel_id):
+        return videos if channel_id == "UC_a" else []
 
     with (
         patch("src.scheduler.load_channels", return_value=channels),
-        patch("src.scheduler.fetch_channel_videos", return_value=[]),
+        patch("src.scheduler.fetch_channel_videos", side_effect=fake_fetch),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "x", "relevance": 9}),
+        patch("src.telegram_bot.send_notification", new_callable=AsyncMock),
         patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
     ):
         await run_channel_check(app=app)

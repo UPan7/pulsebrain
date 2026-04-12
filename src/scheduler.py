@@ -16,7 +16,9 @@ from src.config import (
 )
 from src.pending import reject_pending
 from src.pipeline import process_youtube_video
+from src.profile import get_language
 from src.storage import is_processed, make_content_id
+from src.strings import t
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +55,11 @@ async def run_channel_check(app=None) -> int:
     If *app* is provided, a Telegram notification with the approve/reject
     keyboard is sent for each successfully-staged video so the user can
     review the auto-fetched content before it lands in the knowledge base.
-    A round-digest message is always sent at the end of a run (even when
-    zero videos passed the filter) so the user can tell "nothing happened"
-    apart from "bot is dead".
+    A round-digest message is sent at the end of a run *only* when at
+    least one counter (processed / rejected / failed) is non-zero — the
+    user explicitly does not want "heartbeat" noise on empty runs. The
+    manual `/run` command has its own explicit reply that fires
+    unconditionally, so empty manual runs still acknowledge.
     """
     channels = load_channels()
     total_processed = 0
@@ -154,22 +158,27 @@ async def _send_round_digest(
     total_rejected: int,
     total_failed: int,
 ) -> None:
-    """Post-run summary. Always sent when *app* is provided, even for
-    zero-result runs — the whole point is to prove to the user that
-    the scheduler is alive.
+    """Post-run summary. Sent only when at least one counter is non-zero.
+
+    Zero-activity runs are silent by design — the user explicitly does
+    not want heartbeat noise, and the manual `/run` command has its own
+    explicit reply path for empty-run acknowledgment.
 
     Failures (Telegram down, mock app in tests) are swallowed so the
     scheduler run is never considered broken by a flaky notification.
     """
     if app is None:
         return
-    text = (
-        "🔄 Прогон завершён\n\n"
-        f"Каналов проверено: {channels_checked}\n"
-        f"Новых в /pending: {total_processed}\n"
-        f"Авто-отклонено: {total_rejected}\n"
-        f"Ошибок: {total_failed}\n\n"
-        f"Следующий через {CHECK_INTERVAL_MINUTES} мин"
+    if total_processed == 0 and total_rejected == 0 and total_failed == 0:
+        return
+    text = t(
+        "round_digest_body",
+        get_language(),
+        channels=channels_checked,
+        processed=total_processed,
+        rejected=total_rejected,
+        failed=total_failed,
+        interval=CHECK_INTERVAL_MINUTES,
     )
     try:
         await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)

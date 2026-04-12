@@ -126,6 +126,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "cancel_confirmed": "❌ Отменено. Состояние сброшено.",
         "cancel_nothing_to_cancel": "👌 Нечего отменять.",
 
+        # ── Scheduler round digest ──
+        "round_digest_body": (
+            "🔄 Прогон завершён\n\n"
+            "Каналов проверено: {channels}\n"
+            "Новых в /pending: {processed}\n"
+            "Авто-отклонено: {rejected}\n"
+            "Ошибок: {failed}\n\n"
+            "Следующий через {interval} мин"
+        ),
+
+        # ── Wizard language-picker confirmation ──
+        "wizard_lang_saved": "✅ Язык сохранён.",
+
         # ── Onboarding re-run confirm ──
         "onboarding_confirm_rerun": (
             "⚠️ Профиль уже настроен. Перезапустить онбординг?\n"
@@ -234,6 +247,19 @@ STRINGS: dict[str, dict[str, str]] = {
         # ── Cancel ──
         "cancel_confirmed": "❌ Cancelled. State cleared.",
         "cancel_nothing_to_cancel": "👌 Nothing to cancel.",
+
+        # ── Scheduler round digest ──
+        "round_digest_body": (
+            "🔄 Round complete\n\n"
+            "Channels checked: {channels}\n"
+            "New in /pending: {processed}\n"
+            "Auto-rejected: {rejected}\n"
+            "Errors: {failed}\n\n"
+            "Next in {interval} min"
+        ),
+
+        # ── Wizard language-picker confirmation ──
+        "wizard_lang_saved": "✅ Language saved.",
 
         # ── Onboarding re-run confirm ──
         "onboarding_confirm_rerun": (

@@ -40,8 +40,13 @@ def fetch_channel_videos(channel_id: str) -> list[dict[str, str]]:
         return []
 
 
-async def run_channel_check() -> int:
-    """Check all enabled channels for new videos. Returns count of processed videos."""
+async def run_channel_check(app=None) -> int:
+    """Check all enabled channels for new videos. Returns count of processed videos.
+
+    If *app* is provided, a Telegram notification with the approve/reject
+    keyboard is sent for each successfully-staged video so the user can
+    review the auto-fetched content before it lands in the knowledge base.
+    """
     channels = load_channels()
     total_processed = 0
 
@@ -76,6 +81,14 @@ async def run_channel_check() -> int:
                 total_processed += 1
                 if result.get("is_new_category"):
                     logger.info("New category suggested: %s for %s", result["category"], video["title"])
+                if app is not None:
+                    # Lazy import to avoid a circular import at module load
+                    from src.telegram_bot import send_notification
+                    try:
+                        await send_notification(app, result)
+                    except Exception as exc:
+                        logger.warning("Failed to send notification for %s: %s",
+                                       video["title"], exc)
             elif result and "error" in result:
                 logger.warning(
                     "Failed to process %s: %s", video["title"], result["error"]
@@ -101,7 +114,7 @@ def setup_scheduler(app) -> None:
     async def scheduled_check():
         logger.info("Scheduled channel check starting...")
         try:
-            count = await run_channel_check()
+            count = await run_channel_check(app=app)
             if count > 0:
                 logger.info("Scheduled check found %d new videos", count)
         except Exception as exc:

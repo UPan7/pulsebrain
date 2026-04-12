@@ -246,6 +246,81 @@ async def test_run_channel_check_handles_new_category_log():
 # ── setup_scheduler ─────────────────────────────────────────────────────
 
 
+@pytest.mark.asyncio
+async def test_run_channel_check_sends_notification_when_app_provided():
+    """When app is provided, send_notification is called per successful video."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1"), _make_video("v2")]
+    fake_app = MagicMock()
+
+    sent = []
+
+    async def fake_notify(app, result):
+        sent.append(result)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "deadbeef"}),
+        patch("src.telegram_bot.send_notification", side_effect=fake_notify),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        count = await run_channel_check(app=fake_app)
+
+    assert count == 2
+    assert len(sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_swallows_notification_errors():
+    """Notification failure does not abort the run or skip rate-limit sleep."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+    fake_app = MagicMock()
+
+    async def fail_notify(*args, **kwargs):
+        raise RuntimeError("telegram down")
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "x"}),
+        patch("src.telegram_bot.send_notification", side_effect=fail_notify),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        count = await run_channel_check(app=fake_app)
+
+    # Still counted as processed despite the notification crash
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_skips_notification_when_no_app():
+    """Without app, no notification is attempted."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "x"}),
+        patch("src.telegram_bot.send_notification") as mock_notify,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check()  # no app
+
+    mock_notify.assert_not_called()
+
+
 def test_setup_scheduler_uses_check_interval():
     from src.scheduler import setup_scheduler
 

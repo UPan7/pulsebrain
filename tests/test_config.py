@@ -73,3 +73,51 @@ def test_add_category_thread_safe(tmp_config_dir):
     cats = load_categories()
     for i in range(5):
         assert f"thread-cat-{i}" in cats, f"thread-cat-{i} missing after concurrent writes"
+
+
+# ── load_channels / save_channels ──────────────────────────────────────────
+
+
+@pytest.fixture()
+def tmp_channels_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import src.config
+    f = tmp_path / "channels.yml"
+    monkeypatch.setattr(src.config, "CHANNELS_FILE", f)
+    return f
+
+
+def test_load_channels_returns_empty_when_missing(tmp_channels_file):
+    from src.config import load_channels
+    assert load_channels() == []
+
+
+def test_load_channels_returns_empty_when_yaml_empty(tmp_channels_file):
+    from src.config import load_channels
+    tmp_channels_file.write_text("", encoding="utf-8")
+    assert load_channels() == []
+
+
+def test_load_channels_returns_channels_from_yaml(tmp_channels_file):
+    import yaml
+    from src.config import load_channels
+
+    data = {"channels": [
+        {"name": "Ch1", "id": "UC1", "category": "ai-news", "enabled": True},
+    ]}
+    tmp_channels_file.write_text(yaml.dump(data), encoding="utf-8")
+
+    channels = load_channels()
+    assert len(channels) == 1
+    assert channels[0]["name"] == "Ch1"
+
+
+def test_save_channels_roundtrip(tmp_channels_file):
+    from src.config import load_channels, save_channels
+
+    payload = [
+        {"name": "Ch1", "id": "UC1", "category": "ai-news", "enabled": True},
+        {"name": "Ch2", "id": "UC2", "category": "wp", "enabled": False},
+    ]
+    save_channels(payload)
+    loaded = load_channels()
+    assert loaded == payload

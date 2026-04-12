@@ -117,3 +117,147 @@ async def test_passes_publish_date():
         mock_proc.assert_called_once()
         _, kwargs = mock_proc.call_args
         assert kwargs.get("upload_date") == "2025-03-20T12:00:00"
+
+
+# ── fetch_channel_videos ────────────────────────────────────────────────
+
+
+def test_fetch_channel_videos_parses_yt_videoid():
+    from src.scheduler import fetch_channel_videos
+
+    fake_feed = MagicMock()
+    fake_feed.entries = [
+        {"yt_videoid": "abc", "title": "T1", "link": "https://yt/watch?v=abc",
+         "published": "2025-06-01"},
+    ]
+    with patch("src.scheduler.feedparser.parse", return_value=fake_feed):
+        videos = fetch_channel_videos("UC1")
+
+    assert len(videos) == 1
+    assert videos[0]["video_id"] == "abc"
+    assert videos[0]["title"] == "T1"
+    assert videos[0]["published"] == "2025-06-01"
+
+
+def test_fetch_channel_videos_falls_back_to_link_parsing():
+    """Entry without yt_videoid uses link?v= parsing."""
+    from src.scheduler import fetch_channel_videos
+
+    fake_feed = MagicMock()
+    fake_feed.entries = [
+        {"yt_videoid": "", "title": "T", "link": "https://www.youtube.com/watch?v=fromlink&t=10",
+         "published": ""},
+    ]
+    with patch("src.scheduler.feedparser.parse", return_value=fake_feed):
+        videos = fetch_channel_videos("UC1")
+
+    assert len(videos) == 1
+    assert videos[0]["video_id"] == "fromlink"
+
+
+def test_fetch_channel_videos_handles_exception():
+    from src.scheduler import fetch_channel_videos
+
+    with patch("src.scheduler.feedparser.parse", side_effect=Exception("rss")):
+        assert fetch_channel_videos("UC1") == []
+
+
+def test_fetch_channel_videos_skips_entries_without_id():
+    from src.scheduler import fetch_channel_videos
+
+    fake_feed = MagicMock()
+    fake_feed.entries = [
+        {"yt_videoid": "ok", "title": "OK", "link": "", "published": ""},
+        {"yt_videoid": "", "title": "Skip", "link": "https://example.com/no-vid", "published": ""},
+    ]
+    with patch("src.scheduler.feedparser.parse", return_value=fake_feed):
+        videos = fetch_channel_videos("UC1")
+
+    assert len(videos) == 1
+    assert videos[0]["video_id"] == "ok"
+
+
+# ── run_channel_check extras ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_logs_error_dict_results():
+    """Error-dict result does not bump the processed counter."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video", return_value={"error": "no transcript"}),
+    ):
+        count = await run_channel_check()
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_sleeps_between_videos():
+    """Each processed video is followed by a 3s rate-limit sleep."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1"), _make_video("v2")]
+
+    sleep_calls = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(secs):
+        sleep_calls.append(secs)
+        await real_sleep(0)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video", return_value={"title": "T"}),
+        patch("src.scheduler.asyncio.sleep", side_effect=fake_sleep),
+    ):
+        await run_channel_check()
+
+    assert sleep_calls == [3, 3]
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_handles_new_category_log():
+    """Result with is_new_category triggers the info-log branch (no crash)."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": None, "enabled": True}]
+    videos = [_make_video("v1")]
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "is_new_category": True, "category": "robotics"}),
+    ):
+        count = await run_channel_check()
+
+    assert count == 1
+
+
+# ── setup_scheduler ─────────────────────────────────────────────────────
+
+
+def test_setup_scheduler_uses_check_interval():
+    from src.scheduler import setup_scheduler
+
+    fake_scheduler = MagicMock()
+    with (
+        patch("apscheduler.schedulers.asyncio.AsyncIOScheduler", return_value=fake_scheduler),
+        patch("src.scheduler.CHECK_INTERVAL_MINUTES", 17),
+    ):
+        result = setup_scheduler(MagicMock())
+
+    assert result is fake_scheduler
+    fake_scheduler.add_job.assert_called_once()
+    _, kwargs = fake_scheduler.add_job.call_args
+    assert kwargs["id"] == "channel_check"
+    assert kwargs["replace_existing"] is True

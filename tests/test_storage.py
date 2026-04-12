@@ -261,3 +261,367 @@ def test_save_entry_rejects_slash(tmp_knowledge_dir, sample_entry_kwargs):
 
     with pytest.raises(ValueError, match="Invalid category"):
         save_entry(**{**sample_entry_kwargs, "category": "foo/bar"})
+
+
+# ── move_entry ─────────────────────────────────────────────────────────────
+
+
+def test_move_entry_relocates_file_and_rewrites_category(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, move_entry
+
+    old = save_entry(**sample_entry_kwargs, update_index=False)
+    new_path = move_entry(str(old), "new-cat")
+
+    assert new_path is not None
+    assert not old.exists()
+    assert Path(new_path).exists()
+    content = Path(new_path).read_text("utf-8")
+    assert "**Category:** new-cat" in content
+    # Year/month preserved
+    assert "/2025/06/" in new_path
+
+
+def test_move_entry_returns_none_when_file_missing(tmp_knowledge_dir):
+    from src.storage import move_entry
+
+    result = move_entry("/nonexistent/path.md", "new-cat")
+    assert result is None
+
+
+def test_move_entry_handles_short_path(tmp_knowledge_dir):
+    """File directly in KNOWLEDGE_DIR (no year/month dirs) — falls back to flat target."""
+    import src.config
+    from src.storage import move_entry
+
+    old = src.config.KNOWLEDGE_DIR / "old-cat" / "stray.md"
+    old.parent.mkdir(parents=True, exist_ok=True)
+    old.write_text("# Stray\n\n- **Category:** old-cat\n", encoding="utf-8")
+
+    new_path = move_entry(str(old), "new-cat")
+    assert new_path is not None
+    assert Path(new_path).exists()
+    assert "new-cat" in new_path
+
+
+def test_move_entry_invalidates_cache(tmp_knowledge_dir, sample_entry_kwargs):
+    import src.storage
+    from src.storage import save_entry, move_entry, get_recent_entries
+
+    old = save_entry(**sample_entry_kwargs, update_index=False)
+    get_recent_entries(5)  # populate cache
+    assert src.storage._entry_cache is not None
+
+    move_entry(str(old), "new-cat")
+    assert src.storage._entry_cache is None
+
+
+# ── search_for_question ────────────────────────────────────────────────────
+
+
+def test_search_for_question_finds_relevant_entries(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, search_for_question
+
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum Computing Basics"},
+               update_index=False)
+    results = search_for_question("quantum")
+
+    assert len(results) >= 1
+    assert "Quantum" in results[0]["title"]
+    assert "extracted_text" in results[0]
+
+
+def test_search_for_question_skips_no_match(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, search_for_question
+
+    save_entry(**sample_entry_kwargs, update_index=False)
+    results = search_for_question("nonexistent-keyword-xyz")
+    assert results == []
+
+
+def test_search_for_question_recency_bonus(tmp_knowledge_dir, sample_entry_kwargs):
+    """Recent entry ranks above older entry with the same keyword score."""
+    from datetime import datetime, timezone
+    from src.storage import save_entry, search_for_question
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum old", "date_str": "2020-01-01"},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum new", "date_str": today},
+               update_index=False)
+
+    results = search_for_question("quantum")
+    assert len(results) >= 2
+    assert "new" in results[0]["title"]
+
+
+def test_search_for_question_relevance_bonus(tmp_knowledge_dir, sample_entry_kwargs):
+    """Higher relevance entry ranks above lower one with the same keyword score."""
+    from src.storage import save_entry, search_for_question
+
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum low", "relevance": 1},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum high", "relevance": 10},
+               update_index=False)
+
+    results = search_for_question("quantum")
+    assert "high" in results[0]["title"]
+
+
+def test_search_for_question_handles_invalid_date(tmp_knowledge_dir, sample_entry_kwargs):
+    """Entry with unparseable date doesn't crash recency calculation."""
+    from src.storage import save_entry, search_for_question
+
+    save_entry(**{**sample_entry_kwargs, "title": "Quantum bad", "date_str": "not-a-date"},
+               update_index=False)
+    results = search_for_question("quantum")
+    assert len(results) >= 1
+
+
+# ── _extract_sections ──────────────────────────────────────────────────────
+
+
+def test_extract_sections_returns_summary_only_when_compact():
+    from src.storage import _extract_sections
+
+    md = (
+        "# Title\n\n"
+        "## Summary\n\n• one\n\n"
+        "## Key Insights\n\n- a\n\n"
+        "## Detailed Notes\n\nlong notes\n"
+    )
+    out = _extract_sections(md, compact=True)
+    assert "## Summary" in out
+    assert "Key Insights" not in out
+    assert "Detailed Notes" not in out
+
+
+def test_extract_sections_returns_all_three_sections():
+    from src.storage import _extract_sections
+
+    md = (
+        "# Title\n\n"
+        "## Summary\n\n• one\n\n"
+        "## Key Insights\n\n- insight\n\n"
+        "## Detailed Notes\n\ndetailed\n"
+    )
+    out = _extract_sections(md, compact=False)
+    assert "## Summary" in out
+    assert "## Key Insights" in out
+    assert "## Detailed Notes" in out
+
+
+def test_extract_sections_falls_back_to_first_1000_chars():
+    from src.storage import _extract_sections
+
+    md = "x" * 2000  # No section headings
+    out = _extract_sections(md)
+    assert len(out) == 1000
+
+
+# ── _update_index branches ─────────────────────────────────────────────────
+
+
+def test_update_index_groups_by_category(tmp_knowledge_dir, sample_entry_kwargs):
+    import src.config
+    from src.storage import save_entry, _update_index
+
+    save_entry(**{**sample_entry_kwargs, "title": "A", "category": "ai-news"},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "B", "category": "wp"},
+               update_index=False)
+    _update_index()
+
+    text = (src.config.KNOWLEDGE_DIR / "_index.md").read_text("utf-8")
+    assert "### ai-news" in text
+    assert "### wp" in text
+
+
+def test_update_index_caps_category_entries_at_20(tmp_knowledge_dir, sample_entry_kwargs):
+    import src.config
+    from src.storage import save_entry, _update_index
+
+    for i in range(25):
+        save_entry(**{**sample_entry_kwargs, "title": f"Entry {i:02d}"},
+                   update_index=False)
+    _update_index()
+
+    text = (src.config.KNOWLEDGE_DIR / "_index.md").read_text("utf-8")
+    # Total category line shows full count, but rows under it cap at 20
+    assert "(25 entries)" in text
+    # Count rows in the ai-agents category section (lines starting with "| 2")
+    cat_section = text.split("### ai-agents")[1].split("###")[0]
+    row_count = sum(1 for line in cat_section.splitlines() if line.startswith("| 2"))
+    assert row_count == 20
+
+
+# ── _parse_entry_metadata ──────────────────────────────────────────────────
+
+
+def test_parse_entry_metadata_returns_none_without_title(tmp_knowledge_dir):
+    import src.config
+    from src.storage import _parse_entry_metadata
+
+    md = src.config.KNOWLEDGE_DIR / "no_title.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text("- **Source:** http://x\n", encoding="utf-8")
+
+    assert _parse_entry_metadata(md) is None
+
+
+def test_parse_entry_metadata_handles_web_article(tmp_knowledge_dir):
+    import src.config
+    from src.storage import _parse_entry_metadata
+
+    md = src.config.KNOWLEDGE_DIR / "web.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text(
+        "# Web Title\n\n"
+        "- **Source:** https://example.com/x\n"
+        "- **Type:** web_article\n"
+        "- **Site:** example.com\n"
+        "- **Date:** 2025-06-15\n"
+        "- **Category:** ai-news\n"
+        "- **Relevance:** 7/10\n",
+        encoding="utf-8",
+    )
+
+    info = _parse_entry_metadata(md)
+    assert info is not None
+    assert info["title"] == "Web Title"
+    assert info["type"] == "web_article"
+    assert info["source"] == "example.com"
+    assert info["category"] == "ai-news"
+    assert info["relevance"] == "7"
+
+
+# ── get_recent_entries / get_stats edges ───────────────────────────────────
+
+
+def test_get_recent_entries_sorts_by_date_desc(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, get_recent_entries
+
+    save_entry(**{**sample_entry_kwargs, "title": "Old", "date_str": "2020-01-01"},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "New", "date_str": "2025-06-15"},
+               update_index=False)
+
+    entries = get_recent_entries(5)
+    assert entries[0]["title"] == "New"
+    assert entries[1]["title"] == "Old"
+
+
+def test_get_recent_entries_respects_count(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, get_recent_entries
+
+    for i in range(5):
+        save_entry(**{**sample_entry_kwargs, "title": f"E{i}"}, update_index=False)
+
+    assert len(get_recent_entries(2)) == 2
+
+
+def test_get_stats_top_sources_ordering(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, get_stats
+
+    for i in range(3):
+        save_entry(**{**sample_entry_kwargs, "title": f"A{i}", "source_name": "Big"},
+                   update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "Solo", "source_name": "Small"},
+               update_index=False)
+
+    stats = get_stats()
+    assert stats["top_sources"][0][0] == "Big"
+    assert stats["top_sources"][0][1] == 3
+
+
+def test_get_stats_avg_relevance_with_no_scores(tmp_knowledge_dir):
+    """Empty knowledge base → avg_relevance is 0."""
+    from src.storage import get_stats
+
+    stats = get_stats()
+    assert stats["avg_relevance"] == 0
+    assert stats["total"] == 0
+
+
+def test_get_stats_this_week_filter(tmp_knowledge_dir, sample_entry_kwargs):
+    from datetime import datetime, timezone
+    from src.storage import save_entry, get_stats
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    save_entry(**{**sample_entry_kwargs, "title": "Recent", "date_str": today},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "Old", "date_str": "2020-01-01"},
+               update_index=False)
+
+    stats = get_stats()
+    assert stats["this_week"] == 1
+
+
+# ── search_knowledge edges ────────────────────────────────────────────────
+
+
+def test_search_knowledge_skips_index_file(tmp_knowledge_dir, sample_entry_kwargs):
+    import src.config
+    from src.storage import save_entry, search_knowledge, _update_index
+
+    save_entry(**sample_entry_kwargs, update_index=False)
+    _update_index()  # Creates _index.md
+
+    # Searching for a term that's only in _index.md (like "Knowledge Base Index")
+    # should not return _index.md itself
+    results = search_knowledge("Knowledge Base Index")
+    assert all("_index.md" not in r.get("path", "") for r in results)
+
+
+def test_search_knowledge_no_match_returns_empty(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, search_knowledge
+
+    save_entry(**sample_entry_kwargs, update_index=False)
+    assert search_knowledge("xyz-no-match") == []
+
+
+# ── save_entry edges ──────────────────────────────────────────────────────
+
+
+def test_save_entry_handles_invalid_date_string(tmp_knowledge_dir, sample_entry_kwargs):
+    """Unparseable date_str → falls back to today (no crash)."""
+    from src.storage import save_entry
+
+    path = save_entry(**{**sample_entry_kwargs, "date_str": "not-a-date"},
+                      update_index=False)
+    assert path.exists()
+
+
+def test_save_entry_handles_long_filename(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry
+
+    long_title = "x" * 300
+    path = save_entry(**{**sample_entry_kwargs, "title": long_title}, update_index=False)
+    assert path.exists()
+    assert len(path.name) <= 100
+
+
+def test_save_entry_then_parse_metadata_roundtrip(tmp_knowledge_dir, sample_entry_kwargs):
+    """Format written by save_entry matches what _parse_entry_metadata can read."""
+    from src.storage import save_entry, _parse_entry_metadata
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    info = _parse_entry_metadata(path)
+
+    assert info is not None
+    assert info["title"] == "Test Video Title"
+    assert info["type"] == "youtube_video"
+    assert info["source"] == "TestChannel"  # from "Channel:" line
+    assert info["category"] == "ai-agents"
+    assert info["date"] == "2025-06-15"
+    assert info["relevance"] == "8"
+
+
+def test_save_entry_with_unicode_title(tmp_knowledge_dir, sample_entry_kwargs):
+    """Cyrillic title slugifies safely."""
+    from src.storage import save_entry
+
+    path = save_entry(**{**sample_entry_kwargs, "title": "Привет Мир Тест"},
+                      update_index=False)
+    assert path.exists()
+    content = path.read_text("utf-8")
+    assert "Привет Мир Тест" in content

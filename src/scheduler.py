@@ -7,7 +7,8 @@ import logging
 
 import feedparser
 
-from src.config import CHECK_INTERVAL_MINUTES, load_channels, logger
+from src.config import CHECK_INTERVAL_MINUTES, MIN_RELEVANCE_THRESHOLD, load_channels, logger
+from src.pending import reject_pending
 from src.pipeline import process_youtube_video
 from src.storage import is_processed, make_content_id
 
@@ -78,6 +79,22 @@ async def run_channel_check(app=None) -> int:
                 upload_date=video.get("published"),
             )
             if result and "error" not in result:
+                # Relevance gate: per-channel override > global default.
+                # Below threshold → silent reject, no notification, no
+                # counter bump. The content_id is already marked pending
+                # inside the pipeline; reject_pending flips it to
+                # "rejected" so the scheduler never re-fetches it.
+                threshold = channel.get("min_relevance", MIN_RELEVANCE_THRESHOLD)
+                relevance = result.get("relevance", 5)
+                if relevance < threshold:
+                    logger.info(
+                        "Auto-rejected low-relevance video: %s (rel=%d, threshold=%d)",
+                        video["title"], relevance, threshold,
+                    )
+                    reject_pending(result["pending_id"])
+                    await asyncio.sleep(3)
+                    continue
+
                 total_processed += 1
                 if result.get("is_new_category"):
                     logger.info("New category suggested: %s for %s", result["category"], video["title"])

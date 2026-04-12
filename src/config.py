@@ -23,6 +23,11 @@ OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
 TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: int = int(os.environ.get("TELEGRAM_CHAT_ID", "0"))
 CHECK_INTERVAL_MINUTES: int = int(os.environ.get("CHECK_INTERVAL_MINUTES", "30"))
+# Default minimum relevance for auto-fetched videos from subscribed channels.
+# Below this threshold, the scheduler silently rejects the entry (no
+# notification, no .md file) to keep low-signal content out of the queue.
+# Per-channel overrides live in channels.yml as `min_relevance: <int>`.
+MIN_RELEVANCE_THRESHOLD: int = int(os.environ.get("MIN_RELEVANCE_THRESHOLD", "4"))
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
 TRANSCRIPT_LANGUAGES: list[str] = os.environ.get(
     "TRANSCRIPT_LANGUAGES", "en,de,ru"

@@ -321,6 +321,117 @@ async def test_run_channel_check_skips_notification_when_no_app():
     mock_notify.assert_not_called()
 
 
+# ── Relevance gate ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_auto_rejects_below_global_threshold():
+    """Relevance under the global threshold → silent reject, no counter bump."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+    fake_app = MagicMock()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "Meh", "pending_id": "dead", "relevance": 3}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 7),
+        patch("src.scheduler.reject_pending", return_value=True) as mock_reject,
+        patch("src.telegram_bot.send_notification") as mock_notify,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        count = await run_channel_check(app=fake_app)
+
+    assert count == 0
+    mock_reject.assert_called_once_with("dead")
+    mock_notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_uses_per_channel_threshold():
+    """Per-channel min_relevance overrides the global threshold."""
+    from src.scheduler import run_channel_check
+
+    channels = [{
+        "name": "Strict", "id": "UC_strict", "category": "ai-news",
+        "enabled": True, "min_relevance": 9,
+    }]
+    videos = [_make_video("v1")]
+    fake_app = MagicMock()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "dead", "relevance": 7}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 4),  # would normally pass
+        patch("src.scheduler.reject_pending", return_value=True) as mock_reject,
+        patch("src.telegram_bot.send_notification") as mock_notify,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        count = await run_channel_check(app=fake_app)
+
+    assert count == 0
+    mock_reject.assert_called_once_with("dead")
+    mock_notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_passes_when_above_threshold():
+    """Relevance above the threshold → normal path, notification, counter."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1")]
+    fake_app = MagicMock()
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "live", "relevance": 8}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 4),
+        patch("src.scheduler.reject_pending") as mock_reject,
+        patch("src.telegram_bot.send_notification", new_callable=AsyncMock) as mock_notify,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        count = await run_channel_check(app=fake_app)
+
+    assert count == 1
+    mock_reject.assert_not_called()
+    mock_notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_channel_check_relevance_gate_waits_rate_limit():
+    """Even auto-rejected videos must go through the 3-second sleep."""
+    from src.scheduler import run_channel_check
+
+    channels = [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+    videos = [_make_video("v1"), _make_video("v2")]
+
+    sleep_calls = []
+
+    async def fake_sleep(secs):
+        sleep_calls.append(secs)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=channels),
+        patch("src.scheduler.fetch_channel_videos", return_value=videos),
+        patch("src.scheduler.process_youtube_video",
+              return_value={"title": "T", "pending_id": "d", "relevance": 2}),
+        patch("src.scheduler.MIN_RELEVANCE_THRESHOLD", 5),
+        patch("src.scheduler.reject_pending", return_value=True),
+        patch("src.scheduler.asyncio.sleep", side_effect=fake_sleep),
+    ):
+        await run_channel_check()
+
+    assert sleep_calls == [3, 3]
+
+
 def test_setup_scheduler_uses_check_interval():
     from src.scheduler import setup_scheduler
 

@@ -97,6 +97,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Последние N записей (по умолч. 5)\n"
             "/pending — Записи на подтверждение\n"
             "/rejected [N] — Последние авто-отклонённые видео\n"
+            "/get <id> — Полный текст + скачать .md/raw файлы\n"
             "/status — Состояние бота\n"
             "/run — Запустить проверку каналов\n"
             "/stats — Подробная статистика\n"
@@ -310,6 +311,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Неизвестный тип контента: {source_type}",
         "pipeline_err_summarize_failed": "Не удалось создать саммари для: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Использование: /get <entry_id>\n\n"
+            "Скопируй entry_id из /recent или /search — это 8-значный "
+            "код в квадратных скобках рядом с каждой записью."
+        ),
+        "get_not_found": (
+            "⚠️ Запись `{entry_id}` не найдена. Запусти /recent или "
+            "/search чтобы увидеть актуальные ID."
+        ),
+        "get_read_failed": "⚠️ Не удалось прочитать файл записи с диска.",
+        "recent_get_hint": "💡 /get <id> — полный текст + скачивание файлов",
+        "entry_btn_md_file": "📎 Скачать .md",
+        "entry_btn_raw_file": "📎 Сырой текст",
+        "entry_no_raw_text": "Сырого текста для этой записи нет.",
+        "entry_file_caption": "📎 {name}",
     },
     "en": {
         # ── /start, /help ──
@@ -334,6 +352,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Last N entries (default 5)\n"
             "/pending — Entries awaiting approval\n"
             "/rejected [N] — Recently auto-rejected videos\n"
+            "/get <id> — Full text + download the .md/raw files\n"
             "/status — Bot status\n"
             "/run — Force a channel check\n"
             "/stats — Detailed statistics\n"
@@ -548,6 +567,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Unknown content type: {source_type}",
         "pipeline_err_summarize_failed": "Couldn't produce a summary for: {title}",
+
+        # ── Phase 7.9: /get command + file access ──
+        "get_usage": (
+            "Usage: /get <entry_id>\n\n"
+            "Get the entry_id from /recent or /search — it's the 8-char "
+            "code in square brackets next to each item."
+        ),
+        "get_not_found": (
+            "⚠️ Entry `{entry_id}` not found. Run /recent or /search to "
+            "see current IDs."
+        ),
+        "get_read_failed": "⚠️ Failed to read the entry file from disk.",
+        "recent_get_hint": "💡 /get <id> — full text + file downloads",
+        "entry_btn_md_file": "📎 Download .md",
+        "entry_btn_raw_file": "📎 Raw transcript",
+        "entry_no_raw_text": "No raw-text sidecar for this entry.",
+        "entry_file_caption": "📎 {name}",
     },
     "de": {
         "welcome_returning": (
@@ -572,6 +608,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Letzte N Einträge (Standard 5)\n"
             "/pending — Einträge warten auf Bestätigung\n"
             "/rejected [N] — Kürzlich auto-abgelehnte Videos\n"
+            "/get <id> — Volltext + .md/Rohdatei herunterladen\n"
             "/status — Bot-Status\n"
             "/run — Kanalprüfung erzwingen\n"
             "/stats — Detaillierte Statistik\n"
@@ -777,6 +814,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Unbekannter Inhaltstyp: {source_type}",
         "pipeline_err_summarize_failed": "Zusammenfassung konnte nicht erstellt werden für: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Verwendung: /get <entry_id>\n\n"
+            "Die entry_id findest du in /recent oder /search — der "
+            "8-stellige Code in eckigen Klammern neben jedem Eintrag."
+        ),
+        "get_not_found": (
+            "⚠️ Eintrag `{entry_id}` nicht gefunden. Nutze /recent oder "
+            "/search für aktuelle IDs."
+        ),
+        "get_read_failed": "⚠️ Konnte die Eintragsdatei nicht von der Festplatte lesen.",
+        "recent_get_hint": "💡 /get <id> — Volltext + Dateidownloads",
+        "entry_btn_md_file": "📎 .md herunterladen",
+        "entry_btn_raw_file": "📎 Rohtext",
+        "entry_no_raw_text": "Keine Rohtext-Datei für diesen Eintrag.",
+        "entry_file_caption": "📎 {name}",
     },
     "fr": {
         "welcome_returning": (
@@ -801,6 +855,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Les N dernières entrées (défaut 5)\n"
             "/pending — Entrées en attente d'approbation\n"
             "/rejected [N] — Vidéos récemment auto-rejetées\n"
+            "/get <id> — Texte complet + télécharger .md/raw\n"
             "/status — État du bot\n"
             "/run — Forcer une vérification des chaînes\n"
             "/stats — Statistiques détaillées\n"
@@ -1005,6 +1060,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Type de contenu inconnu : {source_type}",
         "pipeline_err_summarize_failed": "Impossible de produire un résumé pour : {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Utilisation : /get <entry_id>\n\n"
+            "Trouve l'entry_id dans /recent ou /search — c'est le code "
+            "à 8 caractères entre crochets près de chaque entrée."
+        ),
+        "get_not_found": (
+            "⚠️ Entrée `{entry_id}` introuvable. Lance /recent ou "
+            "/search pour voir les IDs actuels."
+        ),
+        "get_read_failed": "⚠️ Impossible de lire le fichier depuis le disque.",
+        "recent_get_hint": "💡 /get <id> — texte complet + téléchargements",
+        "entry_btn_md_file": "📎 Télécharger .md",
+        "entry_btn_raw_file": "📎 Texte brut",
+        "entry_no_raw_text": "Pas de fichier texte brut pour cette entrée.",
+        "entry_file_caption": "📎 {name}",
     },
     "es": {
         "welcome_returning": (
@@ -1028,6 +1100,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Últimas N entradas (por defecto 5)\n"
             "/pending — Entradas pendientes de aprobación\n"
             "/rejected [N] — Vídeos auto-rechazados recientemente\n"
+            "/get <id> — Texto completo + descargar .md/raw\n"
             "/status — Estado del bot\n"
             "/run — Forzar comprobación de canales\n"
             "/stats — Estadísticas detalladas\n"
@@ -1232,6 +1305,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Tipo de contenido desconocido: {source_type}",
         "pipeline_err_summarize_failed": "No se pudo generar un resumen para: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Uso: /get <entry_id>\n\n"
+            "Encuentra el entry_id en /recent o /search — es el código "
+            "de 8 caracteres entre corchetes junto a cada entrada."
+        ),
+        "get_not_found": (
+            "⚠️ Entrada `{entry_id}` no encontrada. Ejecuta /recent o "
+            "/search para ver los IDs actuales."
+        ),
+        "get_read_failed": "⚠️ No se pudo leer el archivo de la entrada.",
+        "recent_get_hint": "💡 /get <id> — texto completo + descargas",
+        "entry_btn_md_file": "📎 Descargar .md",
+        "entry_btn_raw_file": "📎 Texto en bruto",
+        "entry_no_raw_text": "No hay archivo de texto en bruto para esta entrada.",
+        "entry_file_caption": "📎 {name}",
     },
     "it": {
         "welcome_returning": (
@@ -1255,6 +1345,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Ultime N voci (default 5)\n"
             "/pending — Voci in attesa di approvazione\n"
             "/rejected [N] — Video auto-rifiutati di recente\n"
+            "/get <id> — Testo completo + scarica .md/raw\n"
             "/status — Stato del bot\n"
             "/run — Forza un controllo canali\n"
             "/stats — Statistiche dettagliate\n"
@@ -1457,6 +1548,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Tipo di contenuto sconosciuto: {source_type}",
         "pipeline_err_summarize_failed": "Impossibile produrre un riepilogo per: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Uso: /get <entry_id>\n\n"
+            "Trovi l'entry_id in /recent o /search — è il codice di "
+            "8 caratteri tra parentesi quadre accanto a ogni voce."
+        ),
+        "get_not_found": (
+            "⚠️ Voce `{entry_id}` non trovata. Esegui /recent o /search "
+            "per vedere gli ID attuali."
+        ),
+        "get_read_failed": "⚠️ Impossibile leggere il file della voce.",
+        "recent_get_hint": "💡 /get <id> — testo completo + download file",
+        "entry_btn_md_file": "📎 Scarica .md",
+        "entry_btn_raw_file": "📎 Testo grezzo",
+        "entry_no_raw_text": "Nessun file di testo grezzo per questa voce.",
+        "entry_file_caption": "📎 {name}",
     },
     "pt": {
         "welcome_returning": (
@@ -1480,6 +1588,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — Últimas N entradas (padrão 5)\n"
             "/pending — Entradas aguardando aprovação\n"
             "/rejected [N] — Vídeos recentemente auto-rejeitados\n"
+            "/get <id> — Texto completo + baixar .md/raw\n"
             "/status — Status do bot\n"
             "/run — Forçar verificação de canais\n"
             "/stats — Estatísticas detalhadas\n"
@@ -1682,6 +1791,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "Tipo de conteúdo desconhecido: {source_type}",
         "pipeline_err_summarize_failed": "Não foi possível gerar um resumo para: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "Uso: /get <entry_id>\n\n"
+            "Encontre o entry_id em /recent ou /search — é o código de "
+            "8 caracteres entre colchetes ao lado de cada entrada."
+        ),
+        "get_not_found": (
+            "⚠️ Entrada `{entry_id}` não encontrada. Execute /recent ou "
+            "/search para ver os IDs atuais."
+        ),
+        "get_read_failed": "⚠️ Falha ao ler o arquivo da entrada.",
+        "recent_get_hint": "💡 /get <id> — texto completo + downloads",
+        "entry_btn_md_file": "📎 Baixar .md",
+        "entry_btn_raw_file": "📎 Texto bruto",
+        "entry_no_raw_text": "Sem arquivo de texto bruto para esta entrada.",
+        "entry_file_caption": "📎 {name}",
     },
     "zh": {
         "welcome_returning": (
@@ -1703,6 +1829,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — 最近 N 条（默认 5）\n"
             "/pending — 等待确认的条目\n"
             "/rejected [N] — 最近自动拒绝的视频\n"
+            "/get <id> — 完整文本 + 下载 .md/原始文件\n"
             "/status — 机器人状态\n"
             "/run — 强制检查频道\n"
             "/stats — 详细统计\n"
@@ -1894,6 +2021,22 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "未知的内容类型：{source_type}",
         "pipeline_err_summarize_failed": "无法为以下内容生成摘要：{title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "用法：/get <entry_id>\n\n"
+            "从 /recent 或 /search 获取 entry_id — 它是每个条目旁"
+            "方括号中的 8 个字符代码。"
+        ),
+        "get_not_found": (
+            "⚠️ 找不到条目 `{entry_id}`。运行 /recent 或 /search 查看当前 ID。"
+        ),
+        "get_read_failed": "⚠️ 无法从磁盘读取条目文件。",
+        "recent_get_hint": "💡 /get <id> — 完整文本 + 文件下载",
+        "entry_btn_md_file": "📎 下载 .md",
+        "entry_btn_raw_file": "📎 原始文本",
+        "entry_no_raw_text": "该条目没有原始文本文件。",
+        "entry_file_caption": "📎 {name}",
     },
     "ja": {
         "welcome_returning": (
@@ -1917,6 +2060,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — 最新 N 件（既定 5）\n"
             "/pending — 承認待ちのエントリ\n"
             "/rejected [N] — 最近自動却下された動画\n"
+            "/get <id> — 全文 + .md / 生テキストのダウンロード\n"
             "/status — ボットの状態\n"
             "/run — チャンネルチェックを強制実行\n"
             "/stats — 詳細統計\n"
@@ -2114,6 +2258,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "不明なコンテンツタイプ：{source_type}",
         "pipeline_err_summarize_failed": "以下の要約を作成できませんでした：{title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "使用法：/get <entry_id>\n\n"
+            "entry_id は /recent または /search で確認できます — "
+            "各エントリの横の角括弧内にある 8 文字のコードです。"
+        ),
+        "get_not_found": (
+            "⚠️ エントリ `{entry_id}` が見つかりません。"
+            "/recent または /search で現在の ID を確認してください。"
+        ),
+        "get_read_failed": "⚠️ ディスクからエントリファイルを読み込めませんでした。",
+        "recent_get_hint": "💡 /get <id> — 全文 + ファイルダウンロード",
+        "entry_btn_md_file": "📎 .md をダウンロード",
+        "entry_btn_raw_file": "📎 生テキスト",
+        "entry_no_raw_text": "このエントリには生テキストファイルがありません。",
+        "entry_file_caption": "📎 {name}",
     },
     "ar": {
         "welcome_returning": (
@@ -2137,6 +2298,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent [N] — آخر N مدخلات (الافتراضي 5)\n"
             "/pending — المدخلات في انتظار الموافقة\n"
             "/rejected [N] — الفيديوهات المرفوضة تلقائياً مؤخراً\n"
+            "/get <id> — النص الكامل + تنزيل ملفات .md/raw\n"
             "/status — حالة البوت\n"
             "/run — فرض فحص القنوات\n"
             "/stats — إحصائيات مفصلة\n"
@@ -2334,6 +2496,23 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "pipeline_err_unknown_source_type": "نوع محتوى غير معروف: {source_type}",
         "pipeline_err_summarize_failed": "تعذّر توليد ملخص لـ: {title}",
+
+        # ── Phase 7.9 ──
+        "get_usage": (
+            "الاستخدام: /get <entry_id>\n\n"
+            "احصل على entry_id من /recent أو /search — هو الرمز المكوّن "
+            "من 8 أحرف بين قوسين مربعين بجانب كل مدخل."
+        ),
+        "get_not_found": (
+            "⚠️ المدخل `{entry_id}` غير موجود. شغّل /recent أو /search "
+            "لرؤية المعرّفات الحالية."
+        ),
+        "get_read_failed": "⚠️ فشل قراءة ملف المدخل من القرص.",
+        "recent_get_hint": "💡 /get <id> — النص الكامل + تنزيل الملفات",
+        "entry_btn_md_file": "📎 تنزيل .md",
+        "entry_btn_raw_file": "📎 النص الخام",
+        "entry_no_raw_text": "لا يوجد ملف نص خام لهذا المدخل.",
+        "entry_file_caption": "📎 {name}",
     },
 }
 

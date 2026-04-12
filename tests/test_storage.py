@@ -784,3 +784,94 @@ def test_move_entry_handles_missing_sibling(tmp_knowledge_dir, sample_entry_kwar
     new_md_str = move_entry(str(path), "new-cat")
     assert new_md_str is not None
     assert Path(new_md_str).exists()
+
+
+# ── Entry IDs + file access (Phase 7.9) ─────────────────────────────────────
+
+
+def test_entry_id_stable_for_same_path(tmp_knowledge_dir, sample_entry_kwargs):
+    """Same path → same ID across calls."""
+    from src.storage import entry_id, save_entry
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    first = entry_id(path)
+    second = entry_id(path)
+    assert first == second
+    assert len(first) == 8
+    # Hex characters only
+    assert all(c in "0123456789abcdef" for c in first)
+
+
+def test_entry_id_differs_between_different_paths(tmp_knowledge_dir, sample_entry_kwargs):
+    """Different entries → different IDs."""
+    from src.storage import entry_id, save_entry
+
+    a = save_entry(**{**sample_entry_kwargs, "title": "Entry A"}, update_index=False)
+    b = save_entry(**{**sample_entry_kwargs, "title": "Entry B"}, update_index=False)
+    assert entry_id(a) != entry_id(b)
+
+
+def test_parse_entry_metadata_populates_id(tmp_knowledge_dir, sample_entry_kwargs):
+    """_parse_entry_metadata now surfaces the ID in every entry dict."""
+    from src.storage import _parse_entry_metadata, save_entry
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    info = _parse_entry_metadata(path)
+    assert info is not None
+    assert "id" in info
+    assert len(info["id"]) == 8
+
+
+def test_find_entry_by_id_returns_match(tmp_knowledge_dir, sample_entry_kwargs):
+    """find_entry_by_id resolves a known ID back to the entry dict."""
+    from src.storage import (
+        _invalidate_entry_cache,
+        entry_id,
+        find_entry_by_id,
+        save_entry,
+    )
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    target_id = entry_id(path)
+    found = find_entry_by_id(target_id)
+    assert found is not None
+    assert found["path"] == str(path)
+    assert found["id"] == target_id
+
+
+def test_find_entry_by_id_returns_none_for_unknown(tmp_knowledge_dir):
+    """Nonexistent ID → None (never raises)."""
+    from src.storage import find_entry_by_id
+
+    assert find_entry_by_id("deadbeef") is None
+    assert find_entry_by_id("") is None
+
+
+def test_read_entry_markdown_reads_full_content(tmp_knowledge_dir, sample_entry_kwargs):
+    """read_entry_markdown returns the complete file content, not just the header."""
+    from src.storage import read_entry_markdown, save_entry
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    content = read_entry_markdown(path)
+
+    # Every section the writer produced should be present
+    assert "## Summary" in content
+    assert "## Detailed Notes" in content
+
+
+def test_get_source_text_path_returns_sibling(tmp_knowledge_dir, sample_entry_kwargs):
+    """get_source_text_path maps a .md path to its .source.txt sibling."""
+    from src.storage import get_source_text_path, save_entry
+
+    path = save_entry(
+        **{**sample_entry_kwargs, "raw_text": "hello raw world"},
+        update_index=False,
+    )
+    sibling = get_source_text_path(path)
+    assert sibling.exists()
+    assert sibling.read_text(encoding="utf-8") == "hello raw world"
+    # Sibling is "<md-stem>.source.txt" — lives in the same directory
+    assert sibling.name == path.stem + ".source.txt"
+    assert sibling.parent == path.parent

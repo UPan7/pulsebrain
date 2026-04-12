@@ -222,6 +222,73 @@ def _source_sibling_path(md_path: Path) -> Path:
     return md_path.with_name(md_path.stem + ".source.txt")
 
 
+def get_source_text_path(md_path: str | Path) -> Path:
+    """Public wrapper — return the .source.txt sibling path for a .md file.
+
+    The sibling may or may not exist on disk; callers should check
+    `.exists()` before reading.
+    """
+    return _source_sibling_path(Path(md_path))
+
+
+# ── Stable entry IDs ─────────────────────────────────────────────────────────
+
+def entry_id(md_path: str | Path) -> str:
+    """Short stable hex ID for a knowledge-base entry, derived from its
+    path relative to KNOWLEDGE_DIR.
+
+    Used by the Telegram `/get` command, search/recent output, and the
+    file-download callbacks to reference an entry without embedding its
+    full absolute path in callback_data (which is capped at 64 bytes).
+
+    The 8-char sha256 prefix collides with probability ~2^-32 — more
+    than enough for a personal knowledge base of a few thousand entries.
+    Collisions surface as "entry not found" rather than as silent
+    wrong-file delivery because find_entry_by_id iterates and checks
+    each candidate's full hash, so even a prefix collision would only
+    affect the ordering.
+    """
+    import hashlib
+    p = Path(md_path)
+    try:
+        rel = p.relative_to(KNOWLEDGE_DIR)
+    except ValueError:
+        # Fall back to the filename if the path is outside KNOWLEDGE_DIR
+        # (shouldn't happen in practice — knowledge entries always live
+        # under KNOWLEDGE_DIR). Using the name alone is still stable as
+        # long as the file isn't moved.
+        rel = Path(p.name)
+    return hashlib.sha256(str(rel).encode("utf-8")).hexdigest()[:8]
+
+
+def find_entry_by_id(wanted_id: str) -> dict[str, str] | None:
+    """Look up a cached entry by its `entry_id(...)` value.
+
+    Returns the same dict shape as `_parse_entry_metadata` (with the
+    added `"id"` key populated), or None if no entry matches. Uses the
+    60-second cache in `_get_all_entries` so repeated lookups during a
+    single Telegram interaction don't re-scan the filesystem.
+    """
+    if not wanted_id:
+        return None
+    for entry in _get_all_entries():
+        if entry.get("id") == wanted_id:
+            return entry
+    return None
+
+
+def read_entry_markdown(path: str | Path) -> str:
+    """Read the full markdown contents of an entry from disk.
+
+    Separate from `_parse_entry_metadata` which only reads the top 2KB
+    for header parsing. This helper reads the whole file so the bot
+    can surface detailed notes / key insights / action items via
+    `/get <id>`.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 # ── Move entry between categories ────────────────────────────────────────────
 
 def move_entry(old_path: str, new_category: str) -> str | None:
@@ -353,7 +420,10 @@ def _parse_entry_metadata(md_file: Path) -> dict[str, str] | None:
     except OSError:
         return None
 
-    info: dict[str, str] = {"path": str(md_file)}
+    info: dict[str, str] = {
+        "path": str(md_file),
+        "id": entry_id(md_file),
+    }
 
     for line in content.split("\n"):
         if line.startswith("# ") and "title" not in info:

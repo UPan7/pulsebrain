@@ -1559,9 +1559,9 @@ def test_create_bot_application_registers_handlers():
         app = create_bot_application()
 
     assert app is fake_app
-    # 16 commands (incl. /pending, /rejected, /onboarding, /cancel, /language)
-    # + 1 callback + 1 message = 18 handlers
-    assert fake_app.add_handler.call_count == 18
+    # 17 commands (incl. /pending, /rejected, /get, /onboarding, /cancel,
+    # /language) + 1 callback + 1 message = 19 handlers
+    assert fake_app.add_handler.call_count == 19
 
 
 # ── Onboarding wizard (Phase 5.3) ────────────────────────────────────────
@@ -2034,3 +2034,244 @@ async def test_language_roundtrip_ru_to_en_to_ru(tmp_knowledge_dir):
         assert load_profile()["language"] == "en"
         await callback_handler(_make_callback_update(12345, "lang:ru"), ctx)
         assert load_profile()["language"] == "ru"
+
+
+# ── /get command + entry file downloads (Phase 7.9) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_usage_when_no_args(tmp_knowledge_dir):
+    """/get with no args → usage message, no file lookup."""
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "Usage" in text or "/get" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_not_found_for_unknown_id(tmp_knowledge_dir):
+    """Unknown ID → 'not found' message with the offending id echoed back."""
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["deadbeef"])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "deadbeef" in text
+    assert "not found" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_returns_body_with_download_buttons(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """Happy path: save an entry, look it up by ID, verify the body text
+    and the download keyboard show up."""
+    from src.profile import init_profile
+    from src.storage import (
+        _invalidate_entry_cache,
+        entry_id,
+        save_entry,
+    )
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    path = save_entry(
+        **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
+        update_index=False,
+    )
+    _invalidate_entry_cache()
+
+    target = entry_id(path)
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[target])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    call = update.message.reply_text.call_args
+    text = call[0][0]
+    # Body content surfaced
+    assert "Summary" in text
+    assert sample_entry_kwargs["title"] in text
+    assert sample_entry_kwargs["source_url"] in text
+    # Keyboard attached with both [md] and [raw] buttons (since raw_text
+    # was written, the sidecar exists)
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 2
+    assert any("md" in b.callback_data.lower() for b in buttons)
+    assert any("raw" in b.callback_data.lower() for b in buttons)
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_keyboard_has_no_raw_button_without_sidecar(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """Entry without raw_text → only the [md] button is shown."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[entry_id(path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    call = update.message.reply_text.call_args
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 1
+    assert "md" in buttons[0].callback_data.lower()
+
+
+def _make_callback_update_with_document(chat_id: int = 12345, data: str = ""):
+    """Callback update with reply_document wired as AsyncMock."""
+    update = _make_callback_update(chat_id=chat_id, data=data)
+    update.callback_query.message.reply_document = AsyncMock()
+    return update
+
+
+@pytest.mark.asyncio
+async def test_callback_entfile_md_sends_document(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """`entfile:md:<id>` → reply_document called with the .md file handle."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    target_id = entry_id(path)
+    update = _make_callback_update_with_document(
+        data=f"entfile:md:{target_id}"
+    )
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_document.assert_called_once()
+    kwargs = update.callback_query.message.reply_document.call_args.kwargs
+    assert kwargs["filename"] == path.name
+
+
+@pytest.mark.asyncio
+async def test_callback_entfile_raw_sends_sidecar(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """`entfile:raw:<id>` → reply_document called with the .source.txt handle."""
+    from src.profile import init_profile
+    from src.storage import (
+        _invalidate_entry_cache,
+        entry_id,
+        get_source_text_path,
+        save_entry,
+    )
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    path = save_entry(
+        **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
+        update_index=False,
+    )
+    _invalidate_entry_cache()
+
+    target_id = entry_id(path)
+    update = _make_callback_update_with_document(
+        data=f"entfile:raw:{target_id}"
+    )
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_document.assert_called_once()
+    kwargs = update.callback_query.message.reply_document.call_args.kwargs
+    assert kwargs["filename"] == get_source_text_path(path).name
+
+
+@pytest.mark.asyncio
+async def test_callback_entfile_raw_no_sidecar_falls_back_to_text(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """`entfile:raw:<id>` on an entry without a sidecar → "no raw text"
+    text message, NOT reply_document."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    target_id = entry_id(path)
+    update = _make_callback_update_with_document(
+        data=f"entfile:raw:{target_id}"
+    )
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_document.assert_not_called()
+    update.callback_query.message.reply_text.assert_called()
+    text = update.callback_query.message.reply_text.call_args[0][0]
+    assert "raw" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_callback_entfile_unknown_id(tmp_knowledge_dir):
+    """Unknown entry id in callback → 'not found' text, no document send."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    update = _make_callback_update_with_document(data="entfile:md:cafebabe")
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_document.assert_not_called()
+    update.callback_query.message.reply_text.assert_called()
+    text = update.callback_query.message.reply_text.call_args[0][0]
+    assert "cafebabe" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_recent_shows_entry_id_prefix(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """Each /recent row now carries its 8-char ID in square brackets."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import cmd_recent
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_recent(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert f"[{entry_id(path)}]" in text
+    # Discoverability hint for /get is appended
+    assert "/get" in text

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -49,7 +50,15 @@ from src.pending import (
 from src.pipeline import process_web_article, process_youtube_video
 from src.profile import get_language, profile_exists
 from src.router import SourceType, detect_source_type
-from src.storage import get_recent_entries, get_stats, search_for_question, search_knowledge
+from src.storage import (
+    find_entry_by_id,
+    get_recent_entries,
+    get_source_text_path,
+    get_stats,
+    read_entry_markdown,
+    search_for_question,
+    search_knowledge,
+)
 from src.strings import t
 from src.summarize import answer_question
 
@@ -721,14 +730,17 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lines = [t("search_found_header", lang, count=len(results), query=query)]
     for i, r in enumerate(results[:5], 1):
         type_icon = "📺" if r.get("type") == "youtube_video" else "📰"
+        entry_id_prefix = f"[{r.get('id', '????????')}]"
         lines.append(
-            f"{i}. {type_icon} {r.get('title', '?')}\n"
+            f"{i}. {entry_id_prefix} {type_icon} {r.get('title', '?')}\n"
             f"   {r.get('source', '?')} | {r.get('date', '?')} | "
             f"{r.get('category', '?')} | ⭐ {r.get('relevance', '?')}/10"
         )
         if r.get("summary_preview"):
             lines.append(f"   {r['summary_preview'][:100]}")
         lines.append("")
+
+    lines.append(t("recent_get_hint", lang))
 
     await update.message.reply_text("\n".join(lines))
 
@@ -748,10 +760,13 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lines = [t("recent_header", lang, count=len(entries))]
     for e in entries:
         type_icon = "📺" if e.get("type") == "youtube_video" else "📰"
+        entry_id_prefix = f"[{e.get('id', '????????')}] "
         lines.append(
-            f"{type_icon} {e.get('title', '?')}\n"
+            f"{entry_id_prefix}{type_icon} {e.get('title', '?')}\n"
             f"   {e.get('source', '?')} | {e.get('date', '?')} | {e.get('category', '?')}"
         )
+    lines.append("")
+    lines.append(t("recent_get_hint", lang))
 
     await update.message.reply_text("\n".join(lines))
 
@@ -889,6 +904,122 @@ async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
     await update.message.reply_text(_truncate_message("\n".join(lines)))
+
+
+# ── Entry detail / file access (/get command) ───────────────────────────────
+
+def _strip_frontmatter(md_content: str) -> str:
+    """Drop the # Title + bullet-list header block, return the rest.
+
+    The written .md has this shape:
+
+        # Title
+
+        - **Source:** ...
+        - **Type:** ...
+        - ...
+
+        ## Summary
+        ...
+
+    For the /get detail view the frontmatter metadata is shown separately
+    (with nice emoji labels), so we strip it out here and return only
+    from the first `## ` onwards.
+    """
+    marker = md_content.find("\n## ")
+    if marker == -1:
+        return md_content
+    return md_content[marker + 1:]
+
+
+def _render_entry_detail(entry: dict[str, Any], body: str) -> str:
+    """Render the header block for a /get response — metadata + source URL.
+
+    The caller concatenates this with the (truncated) markdown body
+    below and sends it as a single Telegram message. Rendered in the
+    current profile language.
+    """
+    lang = get_language()
+    icon = _SOURCE_ICONS.get(entry.get("type", ""), "📄")
+    lines = [
+        f"{icon} {entry.get('title', '?')}",
+        "",
+        f"🔗 {entry.get('source_url', '?')}",
+        f"📂 {t('pending_category_label', lang)}: {entry.get('category', '?')}",
+        f"📅 {entry.get('date', '?')} · "
+        f"⭐ {entry.get('relevance', '?')}/10",
+    ]
+    topics = entry.get("topics", "")
+    if topics:
+        lines.append(f"🏷 {topics}")
+    lines.append("")
+    lines.append(body)
+    return "\n".join(lines)
+
+
+def _entry_files_keyboard(entry_data_id: str, has_raw: bool) -> InlineKeyboardMarkup:
+    """Build the [📎 .md] [📎 raw] keyboard shown under a /get response."""
+    lang = get_language()
+    row = [
+        InlineKeyboardButton(
+            t("entry_btn_md_file", lang),
+            callback_data=f"entfile:md:{entry_data_id}",
+        ),
+    ]
+    if has_raw:
+        row.append(
+            InlineKeyboardButton(
+                t("entry_btn_raw_file", lang),
+                callback_data=f"entfile:raw:{entry_data_id}",
+            )
+        )
+    return InlineKeyboardMarkup([row])
+
+
+async def cmd_get(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Pull the full markdown content + file-download buttons for an entry
+    by its short ID (as shown in /recent and /search output).
+
+    Usage: /get <entry_id>
+
+    The entry ID is the 8-char prefix printed in square brackets next to
+    each item in /recent and /search output. This command reads the .md
+    file from disk and sends it back as a message (truncated to 4096
+    chars if needed) together with inline buttons to download the .md
+    file and the raw transcript/article sidecar as Telegram documents.
+    """
+    if not _authorized(update):
+        return
+    lang = get_language()
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(t("get_usage", lang))
+        return
+
+    wanted_id = args[0].strip().lower()
+    entry = find_entry_by_id(wanted_id)
+    if entry is None:
+        await update.message.reply_text(t("get_not_found", lang, entry_id=wanted_id))
+        return
+
+    try:
+        raw_md = await asyncio.to_thread(read_entry_markdown, entry["path"])
+    except OSError as exc:
+        logger.warning("Failed to read %s: %s", entry["path"], exc)
+        await update.message.reply_text(t("get_read_failed", lang))
+        return
+
+    body = _strip_frontmatter(raw_md).strip()
+    text = _render_entry_detail(entry, body)
+
+    source_path = get_source_text_path(entry["path"])
+    has_raw = source_path.exists()
+
+    await update.message.reply_text(
+        _truncate_message(text),
+        reply_markup=_entry_files_keyboard(entry["id"], has_raw),
+        disable_web_page_preview=True,
+    )
 
 
 # ── Link drop handler ────────────────────────────────────────────────────────
@@ -1316,6 +1447,41 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(t("fetch_skipped", lang))
 
+    # ── Entry file download (/get flow) ─────────────────────────────────────
+    elif data.startswith("entfile:"):
+        # entfile:{md|raw}:{entry_id}
+        parts = data.split(":", 2)
+        if len(parts) != 3:
+            return
+        kind, wanted_id = parts[1], parts[2]
+        entry = find_entry_by_id(wanted_id)
+        if entry is None:
+            await query.message.reply_text(
+                t("get_not_found", lang, entry_id=wanted_id)
+            )
+            return
+
+        if kind == "md":
+            target_path = Path(entry["path"])
+        elif kind == "raw":
+            target_path = get_source_text_path(entry["path"])
+            if not target_path.exists():
+                await query.message.reply_text(t("entry_no_raw_text", lang))
+                return
+        else:
+            return
+
+        try:
+            with open(target_path, "rb") as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=target_path.name,
+                    caption=t("entry_file_caption", lang, name=target_path.name),
+                )
+        except OSError as exc:
+            logger.warning("Failed to send %s: %s", target_path, exc)
+            await query.message.reply_text(t("get_read_failed", lang))
+
 
 # ── Notification helper ──────────────────────────────────────────────────────
 
@@ -1370,6 +1536,7 @@ def create_bot_application(post_init=None) -> Application:
     app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("pending", cmd_pending))
     app.add_handler(CommandHandler("rejected", cmd_rejected))
+    app.add_handler(CommandHandler("get", cmd_get))
     app.add_handler(CommandHandler("onboarding", cmd_onboarding))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("language", cmd_language))

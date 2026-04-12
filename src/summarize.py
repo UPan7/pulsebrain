@@ -16,27 +16,43 @@ logger = logging.getLogger(__name__)
 def _client() -> openai.OpenAI:
     return openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
 
+# Language directive injected into SUMMARIZE_PROMPT. Determines what
+# language the bullets / notes / insights / action_items are written in.
+# Read from the user profile at summarize time (src.profile.load_profile).
+LANGUAGE_DIRECTIVES: dict[str, str] = {
+    "ru": (
+        "Write in Russian, dense but conversational, like a smart colleague "
+        "explaining what they just watched."
+    ),
+    "en": (
+        "Write in English, dense but conversational, like a smart colleague "
+        "explaining what they just watched."
+    ),
+}
+
+
 SUMMARIZE_PROMPT = """\
-You are curating a personal tech knowledge base for a senior IT consultant
-running self-hosted infrastructure (Docker on Hetzner, Supabase, N8N, Claude
-Code, WordPress). The user reads every summary you produce to decide whether
-to spend time on the original. Your job is to make that decision easy and
-the summary itself enjoyable to read.
+You are curating a personal tech knowledge base. The user reads every
+summary you produce to decide whether to spend time on the original.
+Your job is to make that decision easy and the summary itself enjoyable
+to read.
+
+{user_context}
 
 WRITING VOICE — apply to every text field:
-- Write in Russian, dense but conversational, like a smart colleague
-  explaining what they just watched.
+- {language_directive}
 - Full sentences with subject and verb. NO sentence fragments. NO
   bullet-point labels like "Tools:" or "Pros:".
 - Active voice. Concrete nouns, concrete verbs, real names, real numbers,
   real commands ("apt install caddy 2.7", not "install a web server").
 - Vary sentence length — one short punchy sentence next to a longer one
   with a specific detail. This rhythm is what makes it readable.
-- BANNED phrases: "автор рассказывает", "в этом видео", "стоит отметить",
-  "важно понимать", "обсуждается тема", "рассматриваются вопросы". Drop
-  them and just state the fact.
-- Distinguish opinion from fact when it matters: "по словам автора",
-  "в их бенчмарке", "в проде у них".
+- BANNED phrases: "the author says", "in this video", "it's worth noting",
+  "it's important to understand", "the topic is discussed", "the question
+  is considered" and their equivalents in any language. Drop them and
+  just state the fact.
+- Distinguish opinion from fact when it matters: "per the author",
+  "in their benchmark", "in their production setup".
 
 LENGTH BUDGET — total summary must be readable in ~2 minutes (≤500 words).
 Scale down for short content. NEVER exceed these caps:
@@ -45,36 +61,38 @@ Scale down for short content. NEVER exceed these caps:
 - detailed_notes: 2-3 short paragraphs, 200-300 words total. NARRATIVE
   prose, not a re-list of the bullets. Tell the story: what problem,
   what answer, what catch.
-- key_insights: 2-4 "ага"-моментов, each 10-20 words. Non-obvious claims
+- key_insights: 2-4 "aha" moments, each 10-20 words. Non-obvious claims
   the user wouldn't know without watching.
-- action_items: 2-4 concrete next steps, each 8-20 words. Specific to a
-  small IT consultancy on self-hosted infra. NO generic "попробовать",
-  "рассмотреть", "изучить" — instead "развернуть X в docker-compose",
-  "заменить Y на Z в N8N workflow".
+- action_items: 2-4 concrete next steps, each 8-20 words. NO generic
+  "try X", "consider Y", "study Z" — instead "deploy X in docker-compose",
+  "replace Y with Z in the N8N workflow".
 - topics: 3-6 short kebab-case slugs.
 
 CONTENT RULES:
 - Skip intros, sponsor segments, fluff, promo, "subscribe to my channel".
 - Mention exact tool names, versions, commands, techniques, numbers,
   benchmark results.
-- relevance_score (1-10): how useful this is for the user's actual stack
-  (Docker, Hetzner, Claude Code, N8N, WordPress, AI agents). Generic AI
-  hype = 4. Concrete self-host tutorial = 9.
 
-EXAMPLES of bullet voice:
+RELEVANCE SCORING (1-10) — be honest, not polite. Anchor against the
+USER CONTEXT block above, not a generic rubric:
 
-BAD:  "Обсуждается Claude Code и его возможности для разработчиков."
-GOOD: "Claude Code 2.0 запускает sub-agents в изолированных контекстах —
-       родитель видит только итоговый отчёт, экономия ~40% токенов на
-       длинных задачах."
+  10 = "I needed exactly this. Block the afternoon." A concrete
+       technique/command/benchmark in the user's actively_learning list,
+       fits their known_stack, and they don't already know it.
+   8 = Solid and practical. Worth the watch. Touches known_stack with
+       new detail or a better approach than what they currently use.
+   6 = Interesting, some new info, but mostly known territory. Skip
+       unless it's a slow day.
+   4 = Mostly recap / news / hype. Generic listicle. Sponsored content.
+       Beginner crash course on a topic already in
+       already_comfortable_with.
+   2 = Explicitly in not_interested_in. Wrong audience entirely.
+   1 = Pure noise.
 
-BAD:  "Автор показывает примеры использования N8N для автоматизации."
-GOOD: "Связка N8N + Postgres LISTEN/NOTIFY ловит новые строки за <1с,
-       заменяет внешний cron-планировщик целиком."
-
-BAD:  "Рассматривается тема развёртывания на Hetzner."
-GOOD: "На CAX21 (ARM, €6/мес) Caddy + 3 контейнера держат 200 rps без
-       свопа — измерено через wrk на соседней VPS."
+Downrank aggressively: "5 AI tools you must use", "I used Claude for
+30 days", news recap digests, beginner tutorials on basics the user
+already has. Uprank concrete architecture deep-dives, production
+post-mortems, cost/perf numbers, obscure gotchas.
 
 CONTENT METADATA:
 - Title: {title}
@@ -89,7 +107,7 @@ OUTPUT FORMAT (valid JSON only, no markdown fences, no commentary):
   "key_insights": ["...", "..."],
   "action_items": ["...", "..."],
   "topics": ["...", "..."],
-  "relevance_score": 8
+  "relevance_score": <1-10>
 }}
 
 CONTENT:
@@ -109,6 +127,11 @@ def summarize_content(
     src/categorize.py:categorize_content. Keeping the two LLM calls
     separate avoids the summarize prompt copying its example value
     verbatim (which used to force every entry into 'ai-agents').
+
+    Language and relevance scoring are driven by the user profile
+    (src.profile) — the summary output is written in profile.language
+    and the LLM sees a USER CONTEXT block listing stack / learning
+    goals / rejected topics so it can anchor the relevance rubric.
     """
     client = _client()
 
@@ -117,7 +140,26 @@ def summarize_content(
     if len(content) > max_content_len:
         content = content[:max_content_len] + "\n\n[... content truncated ...]"
 
+    # Build the USER CONTEXT block + pick the language directive from
+    # the current profile. Both are best-effort — a missing profile
+    # falls through to neutral defaults so the summarizer still works.
+    from src.profile import build_relevance_context, format_relevance_context
+
+    try:
+        ctx = build_relevance_context()
+    except Exception as exc:
+        logger.warning("Failed to build relevance context: %s", exc)
+        ctx = {"language": "ru"}
+
+    user_context_block = format_relevance_context(ctx)
+    language = ctx.get("language", "ru")
+    language_directive = LANGUAGE_DIRECTIVES.get(
+        language, LANGUAGE_DIRECTIVES["ru"]
+    )
+
     prompt = SUMMARIZE_PROMPT.format(
+        user_context=user_context_block,
+        language_directive=language_directive,
         title=title,
         source_name=source_name,
         source_type=source_type,

@@ -177,9 +177,31 @@ def test_summarize_prompt_enforces_humanizer_voice():
     assert "LENGTH BUDGET" in SUMMARIZE_PROMPT
     assert "2 minutes" in SUMMARIZE_PROMPT
     assert "500 words" in SUMMARIZE_PROMPT
-    # Few-shot examples
-    assert "BAD:" in SUMMARIZE_PROMPT
-    assert "GOOD:" in SUMMARIZE_PROMPT
+
+
+def test_summarize_prompt_has_anchor_rubric():
+    """Phase 5.6: the 5-line relevance rubric must replace the 3-line version."""
+    from src.summarize import SUMMARIZE_PROMPT
+
+    assert "RELEVANCE SCORING" in SUMMARIZE_PROMPT
+    # Anchor points
+    assert "10 =" in SUMMARIZE_PROMPT
+    assert "8 =" in SUMMARIZE_PROMPT
+    assert "6 =" in SUMMARIZE_PROMPT
+    assert "4 =" in SUMMARIZE_PROMPT
+    assert "2 =" in SUMMARIZE_PROMPT
+    # References to profile fields (anchor against actual user context)
+    assert "actively_learning" in SUMMARIZE_PROMPT
+    assert "known_stack" in SUMMARIZE_PROMPT
+    assert "not_interested_in" in SUMMARIZE_PROMPT
+
+
+def test_summarize_prompt_has_no_literal_relevance_default():
+    """Phase 5.6: drop the `"relevance_score": 8` copy-paste trap."""
+    from src.summarize import SUMMARIZE_PROMPT
+
+    assert '"relevance_score": 8' not in SUMMARIZE_PROMPT
+    assert '"relevance_score": <1-10>' in SUMMARIZE_PROMPT
 
 
 # ── answer_question ────────────────────────────────────────────────────────
@@ -240,3 +262,97 @@ def test_answer_question_returns_none_on_api_error():
         result = answer_question("Q", [{"title": "T", "extracted_text": "x"}])
 
     assert result is None
+
+
+# ── Phase 5.6: profile-driven language + user context injection ──────────
+
+
+def test_summarize_injects_user_context_block(tmp_knowledge_dir, sample_summary_dict):
+    """The prompt sent to the LLM must include the USER CONTEXT block
+    with the profile persona and stack items."""
+    from src.profile import init_profile, save_profile
+    from src.summarize import summarize_content
+
+    init_profile()
+    save_profile({
+        "language": "ru",
+        "persona": "Senior DevOps at small agency",
+        "known_stack": ["docker", "n8n"],
+        "actively_learning": ["AI agents"],
+    })
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content("content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "USER CONTEXT" in prompt
+    assert "Senior DevOps at small agency" in prompt
+    assert "docker" in prompt
+    assert "AI agents" in prompt
+
+
+def test_summarize_uses_profile_language_ru(tmp_knowledge_dir, sample_summary_dict):
+    """profile.language=ru → 'Write in Russian' directive in the prompt."""
+    from src.profile import init_profile, save_profile
+    from src.summarize import summarize_content
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content("content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "Write in Russian" in prompt
+    assert "Write in English" not in prompt
+
+
+def test_summarize_uses_profile_language_en(tmp_knowledge_dir, sample_summary_dict):
+    """profile.language=en → 'Write in English' directive in the prompt."""
+    from src.profile import init_profile, save_profile
+    from src.summarize import summarize_content
+
+    init_profile()
+    save_profile({"language": "en", "persona": "X"})
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content("content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "Write in English" in prompt
+    assert "Write in Russian" not in prompt
+
+
+def test_summarize_defaults_to_ru_when_profile_missing(tmp_knowledge_dir, sample_summary_dict):
+    """No profile on disk → the prompt still renders cleanly in Russian."""
+    from src.profile import init_profile
+    from src.summarize import summarize_content
+
+    init_profile()  # loads defaults, doesn't write file
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content("content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "Write in Russian" in prompt
+    # Still has the USER CONTEXT header even when all fields are empty
+    assert "USER CONTEXT" in prompt
+
+
+def test_summarize_survives_profile_exception(sample_summary_dict):
+    """If build_relevance_context blows up, summarize still runs with defaults."""
+    from src.summarize import summarize_content
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with (
+        patch("src.summarize.openai.OpenAI", return_value=client),
+        patch("src.profile.build_relevance_context", side_effect=RuntimeError("boom")),
+    ):
+        result = summarize_content("content", "T", "S", "youtube_video")
+
+    # Still produced a summary despite the profile failure
+    assert result == sample_summary_dict

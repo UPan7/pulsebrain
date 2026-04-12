@@ -41,6 +41,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     data = tmp_path / "data"
     data.mkdir()
     processed = data / "processed.json"
+    pending = data / "pending.json"
     categories = data / "categories.yml"
     channels = tmp_path / "channels.yml"
 
@@ -48,6 +49,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "KNOWLEDGE_DIR": knowledge,
         "DATA_DIR": data,
         "PROCESSED_FILE": processed,
+        "PENDING_FILE": pending,
         "CATEGORIES_FILE": categories,
         "CHANNELS_FILE": channels,
     }
@@ -55,17 +57,21 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Patch on src.config AND every module that imported at load time
     import src.config
     import src.storage
+    import src.pending
 
     for attr, val in targets.items():
         monkeypatch.setattr(src.config, attr, val)
         if hasattr(src.storage, attr):
             monkeypatch.setattr(src.storage, attr, val)
+        if hasattr(src.pending, attr):
+            monkeypatch.setattr(src.pending, attr, val)
 
     # Reset storage caches so tests start clean
     if hasattr(src.storage, "_processed_cache"):
         monkeypatch.setattr(src.storage, "_processed_cache", None)
     if hasattr(src.storage, "_entry_cache"):
         monkeypatch.setattr(src.storage, "_entry_cache", None)
+    monkeypatch.setattr(src.pending, "_pending_cache", None)
 
     return tmp_path
 
@@ -168,6 +174,27 @@ def sample_entry_kwargs() -> dict[str, Any]:
         "source_name": "TestChannel",
         "date_str": "2025-06-15",
         "category": "ai-agents",
+        "relevance": 8,
+        "topics": ["ai", "agents"],
+        "summary_bullets": ["Bullet one", "Bullet two"],
+        "detailed_notes": "Detailed notes paragraph.",
+        "key_insights": ["Insight one"],
+        "action_items": ["Action one"],
+    }
+
+
+@pytest.fixture()
+def sample_pending_kwargs() -> dict[str, Any]:
+    """Valid kwargs for pending.stage_pending."""
+    return {
+        "content_id": "yt:abc123",
+        "source_url": "https://www.youtube.com/watch?v=abc123",
+        "source_type": "youtube_video",
+        "source_name": "TestChannel",
+        "title": "Test Video Title",
+        "date_str": "2025-06-15",
+        "category": "ai-agents",
+        "is_new_category": False,
         "relevance": 8,
         "topics": ["ai", "agents"],
         "summary_bullets": ["Bullet one", "Bullet two"],

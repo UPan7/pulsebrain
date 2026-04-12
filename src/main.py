@@ -43,11 +43,13 @@ def main() -> None:
     _validate_config()
     _ensure_directories()
 
+    from src.pending import init_pending
     from src.scheduler import setup_scheduler
     from src.storage import init_processed
     from src.telegram_bot import create_bot_application
 
     init_processed()
+    init_pending()
 
     # Scheduler is configured here but started only after the event loop is running
     scheduler_holder: list = []

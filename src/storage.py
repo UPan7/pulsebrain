@@ -372,6 +372,11 @@ def _parse_entry_metadata(md_file: Path) -> dict[str, str] | None:
             info["category"] = line.split(":**", 1)[1].strip()
         elif line.startswith("- **Relevance:**"):
             info["relevance"] = line.split(":**", 1)[1].strip().replace("/10", "")
+        elif line.startswith("- **Topics:**"):
+            raw = line.split(":**", 1)[1].strip()
+            info["topics"] = ", ".join(
+                t.strip() for t in raw.split(",") if t.strip()
+            )
 
     if "title" not in info:
         return None

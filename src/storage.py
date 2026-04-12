@@ -600,8 +600,14 @@ def get_stats() -> dict[str, Any]:
     by_source: dict[str, int] = {}
     relevance_scores: list[int] = []
 
+    # Per-category health accumulators: count, latest entry date,
+    # sum/count of relevance for averaging.
+    cat_health: dict[str, dict[str, Any]] = {}
+
     week_ago = (datetime.now(timezone.utc) -
                 timedelta(days=7)).strftime("%Y-%m-%d")
+    month_ago = (datetime.now(timezone.utc) -
+                 timedelta(days=30)).strftime("%Y-%m-%d")
     this_week = 0
 
     for e in entries:
@@ -612,12 +618,25 @@ def get_stats() -> dict[str, Any]:
         by_source[source] = by_source.get(source, 0) + 1
 
         try:
-            relevance_scores.append(int(e.get("relevance", "0").strip()))
+            rel = int(e.get("relevance", "0").strip())
+            relevance_scores.append(rel)
         except ValueError:
-            pass
+            rel = None
 
         if e.get("date", "") >= week_ago:
             this_week += 1
+
+        # Per-category accumulators
+        bucket = cat_health.setdefault(cat, {
+            "count": 0, "last_entry": "", "rel_sum": 0, "rel_n": 0,
+        })
+        bucket["count"] += 1
+        entry_date = e.get("date", "")
+        if entry_date > bucket["last_entry"]:
+            bucket["last_entry"] = entry_date
+        if rel is not None:
+            bucket["rel_sum"] += rel
+            bucket["rel_n"] += 1
 
     avg_relevance = (
         round(sum(relevance_scores) / len(relevance_scores), 1)
@@ -627,11 +646,24 @@ def get_stats() -> dict[str, Any]:
 
     top_sources = sorted(by_source.items(), key=lambda x: x[1], reverse=True)[:5]
 
+    # Finalize category health: compute avg_relevance and stale flag.
+    category_health: dict[str, dict[str, Any]] = {}
+    for cat, bucket in cat_health.items():
+        avg = (round(bucket["rel_sum"] / bucket["rel_n"], 1)
+               if bucket["rel_n"] else 0)
+        category_health[cat] = {
+            "count": bucket["count"],
+            "last_entry": bucket["last_entry"] or None,
+            "avg_relevance": avg,
+            "stale": bool(bucket["last_entry"]) and bucket["last_entry"] < month_ago,
+        }
+
     return {
         "total": total,
         "videos": videos,
         "articles": articles,
         "by_category": dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True)),
+        "category_health": category_health,
         "this_week": this_week,
         "avg_relevance": avg_relevance,
         "top_sources": top_sources,

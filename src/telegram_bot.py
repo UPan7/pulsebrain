@@ -270,14 +270,27 @@ async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _authorized(update):
         return
     stats = get_stats()
-    categories = load_categories()
-    lines = ["📂 Категории:\n"]
-    for cat, count in stats["by_category"].items():
-        name = categories.get(cat, cat)
-        lines.append(f"• {cat}: {count} записей — {name}")
+    health = stats.get("category_health", {})
 
-    if not stats["by_category"]:
-        lines.append("Пока нет записей.")
+    if not health:
+        await update.message.reply_text("📂 Пока нет записей.")
+        return
+
+    lines = ["📂 Категории:\n"]
+    # Sort by entry count (desc) — matches stats["by_category"] ordering
+    for cat in stats["by_category"]:
+        info = health.get(cat, {})
+        count = info.get("count", 0)
+        last_entry = info.get("last_entry") or "?"
+        avg = info.get("avg_relevance", 0)
+        stale = info.get("stale", False)
+
+        marker = "⚠" if stale else "✅"
+        suffix = " (давно тихо)" if stale else ""
+        lines.append(
+            f"{marker} {cat} ({count} записей){suffix}\n"
+            f"    ⭐ avg {avg}   📅 последняя: {last_entry}"
+        )
 
     await update.message.reply_text("\n".join(lines))
 

@@ -448,8 +448,9 @@ async def test_cmd_categories_empty():
     ctx = _make_context()
     with (
         patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
-        patch("src.telegram_bot.get_stats", return_value={"by_category": {}}),
-        patch("src.telegram_bot.load_categories", return_value={"ai-news": "AI News"}),
+        patch("src.telegram_bot.get_stats", return_value={
+            "by_category": {}, "category_health": {},
+        }),
     ):
         await cmd_categories(update, ctx)
 
@@ -463,16 +464,53 @@ async def test_cmd_categories_with_entries():
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
+    stats = {
+        "by_category": {"ai-news": 3},
+        "category_health": {
+            "ai-news": {
+                "count": 3, "last_entry": "2025-06-15",
+                "avg_relevance": 7.5, "stale": False,
+            },
+        },
+    }
     with (
         patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
-        patch("src.telegram_bot.get_stats", return_value={"by_category": {"ai-news": 3}}),
-        patch("src.telegram_bot.load_categories", return_value={"ai-news": "AI News"}),
+        patch("src.telegram_bot.get_stats", return_value=stats),
     ):
         await cmd_categories(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
     assert "ai-news" in text
     assert "3" in text
+    assert "7.5" in text            # avg_relevance
+    assert "2025-06-15" in text      # last_entry
+    assert "✅" in text              # not stale
+
+
+@pytest.mark.asyncio
+async def test_cmd_categories_marks_stale():
+    from src.telegram_bot import cmd_categories
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    stats = {
+        "by_category": {"wordpress": 2},
+        "category_health": {
+            "wordpress": {
+                "count": 2, "last_entry": "2025-01-01",
+                "avg_relevance": 5.0, "stale": True,
+            },
+        },
+    }
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.get_stats", return_value=stats),
+    ):
+        await cmd_categories(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "⚠" in text
+    assert "давно тихо" in text
 
 
 @pytest.mark.asyncio

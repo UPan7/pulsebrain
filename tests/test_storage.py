@@ -556,6 +556,70 @@ def test_get_stats_this_week_filter(tmp_knowledge_dir, sample_entry_kwargs):
     assert stats["this_week"] == 1
 
 
+# ── category_health ────────────────────────────────────────────────────────
+
+
+def test_get_stats_category_health_counts_and_avg(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, get_stats
+
+    save_entry(**{**sample_entry_kwargs, "title": "A", "category": "ai-agents",
+                  "relevance": 8}, update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "B", "category": "ai-agents",
+                  "relevance": 6}, update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "C", "category": "wordpress",
+                  "relevance": 9}, update_index=False)
+
+    health = get_stats()["category_health"]
+    assert health["ai-agents"]["count"] == 2
+    assert health["ai-agents"]["avg_relevance"] == 7.0
+    assert health["wordpress"]["count"] == 1
+    assert health["wordpress"]["avg_relevance"] == 9.0
+
+
+def test_get_stats_category_health_tracks_last_entry(tmp_knowledge_dir, sample_entry_kwargs):
+    from src.storage import save_entry, get_stats
+
+    save_entry(**{**sample_entry_kwargs, "title": "Old", "date_str": "2024-01-01"},
+               update_index=False)
+    save_entry(**{**sample_entry_kwargs, "title": "Newer", "date_str": "2025-06-15"},
+               update_index=False)
+
+    health = get_stats()["category_health"]
+    assert health["ai-agents"]["last_entry"] == "2025-06-15"
+
+
+def test_get_stats_category_health_marks_stale(tmp_knowledge_dir, sample_entry_kwargs):
+    """Category with no entries in the last 30 days is stale."""
+    from datetime import datetime, timedelta, timezone
+    from src.storage import save_entry, get_stats
+
+    long_ago = (datetime.now(timezone.utc) -
+                timedelta(days=60)).strftime("%Y-%m-%d")
+    save_entry(**{**sample_entry_kwargs, "title": "Ancient", "date_str": long_ago},
+               update_index=False)
+
+    health = get_stats()["category_health"]
+    assert health["ai-agents"]["stale"] is True
+
+
+def test_get_stats_category_health_recent_not_stale(tmp_knowledge_dir, sample_entry_kwargs):
+    from datetime import datetime, timezone
+    from src.storage import save_entry, get_stats
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    save_entry(**{**sample_entry_kwargs, "title": "Fresh", "date_str": today},
+               update_index=False)
+
+    health = get_stats()["category_health"]
+    assert health["ai-agents"]["stale"] is False
+
+
+def test_get_stats_category_health_empty(tmp_knowledge_dir):
+    from src.storage import get_stats
+
+    assert get_stats()["category_health"] == {}
+
+
 # ── search_knowledge edges ────────────────────────────────────────────────
 
 

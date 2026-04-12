@@ -1,12 +1,14 @@
 """End-to-end integration tests proving the layers compose correctly.
 
-These tests use real storage + categorization + pipeline orchestration.
+These tests use real storage + categorization + pipeline + pending registry.
 Only the network boundaries (extractors, LLM) are mocked.
+
+The flow is now: pipeline stages → user approves → commit_pending writes
+the file. We verify both phases.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,8 +17,10 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_storage(tmp_knowledge_dir):
+    from src.pending import init_pending
     from src.storage import init_processed
     init_processed()
+    init_pending()
 
 
 def _summary():
@@ -31,11 +35,14 @@ def _summary():
     }
 
 
-def test_youtube_pipeline_end_to_end(tmp_knowledge_dir):
-    """YouTube URL → file on disk + processed marker + index + roundtrip parse."""
+def test_youtube_pipeline_stage_then_commit(tmp_knowledge_dir):
+    """YouTube URL → stage (no file) → commit → file + index + roundtrip."""
     import src.config
     from src.pipeline import process_youtube_video
-    from src.storage import is_processed, make_content_id, _parse_entry_metadata, search_knowledge
+    from src.pending import commit_pending, get_pending
+    from src.storage import (
+        is_processed, make_content_id, _parse_entry_metadata, search_knowledge,
+    )
 
     with (
         patch("src.pipeline.get_video_metadata", return_value={
@@ -49,53 +56,63 @@ def test_youtube_pipeline_end_to_end(tmp_knowledge_dir):
             upload_date="2025-06-15",
         )
 
-    # 1. Result is well-formed
-    assert result is not None
+    # 1. Result is well-formed and points at a pending entry, NOT a file
     assert "error" not in result
     assert result["title"] == "Claude Code Tutorial"
     assert result["channel"] == "FireshipDev"
     assert result["category"] == "ai-agents"
-    assert result["relevance"] == 9
+    assert "pending_id" in result
+    assert "file_path" not in result
 
-    # 2. File exists at expected path
-    file_path = Path(result["file_path"])
+    # 2. No .md file exists yet
+    md_files = list(src.config.KNOWLEDGE_DIR.rglob("*.md"))
+    assert md_files == []
+
+    # 3. content_id is marked processed (status pending) so scheduler skips it
+    cid = make_content_id("youtube_video", "intvid01")
+    assert is_processed(cid)
+
+    # 4. Pending entry can be looked up
+    entry = get_pending(result["pending_id"])
+    assert entry is not None
+    assert entry["title"] == "Claude Code Tutorial"
+
+    # 5. User approves → file appears, index regenerates, parse roundtrip works
+    file_path = commit_pending(result["pending_id"])
+    assert file_path is not None
     assert file_path.exists()
     assert "/ai-agents/2025/06/" in str(file_path)
 
-    # 3. File contains all five sections
     content = file_path.read_text("utf-8")
     assert "# Claude Code Tutorial" in content
     assert "**Channel:** FireshipDev" in content
     assert "**Category:** ai-agents" in content
-    assert "## Summary" in content
-    assert "## Detailed Notes" in content
-    assert "## Key Insights" in content
-    assert "## Action Items" in content
-    assert "Bullet one in Russian" in content
+    for section in ("## Summary", "## Detailed Notes", "## Key Insights", "## Action Items"):
+        assert section in content
 
-    # 4. Marked as processed
-    assert is_processed(make_content_id("youtube_video", "intvid01"))
+    # 6. Pending entry is dropped
+    assert get_pending(result["pending_id"]) is None
 
-    # 5. Index exists and references the entry
+    # 7. Index updated
     index = src.config.KNOWLEDGE_DIR / "_index.md"
     assert index.exists()
     assert "Claude Code Tutorial" in index.read_text("utf-8")
 
-    # 6. Metadata roundtrip — saved format is parseable
+    # 8. Metadata roundtrip
     info = _parse_entry_metadata(file_path)
     assert info is not None
-    assert info["title"] == "Claude Code Tutorial"
     assert info["type"] == "youtube_video"
     assert info["category"] == "ai-agents"
 
-    # 7. Search finds it
-    results = search_knowledge("Claude")
-    assert any("Claude Code Tutorial" in r["title"] for r in results)
+    # 9. Search finds it
+    assert any("Claude Code Tutorial" in r["title"] for r in search_knowledge("Claude"))
 
 
-def test_web_pipeline_end_to_end(tmp_knowledge_dir):
-    """Web URL → file with author/sitename + processed marker + roundtrip parse."""
+def test_web_pipeline_stage_then_commit(tmp_knowledge_dir):
+    """Web URL → stage → commit → file with author/sitename, processed marker."""
+    import src.config
     from src.pipeline import process_web_article
+    from src.pending import commit_pending
     from src.storage import is_processed, make_content_id, _parse_entry_metadata
 
     article = {
@@ -118,28 +135,75 @@ def test_web_pipeline_end_to_end(tmp_knowledge_dir):
     assert result["title"] == "How To Self-Host N8N"
     assert result["sitename"] == "blog.example.com"
     assert result["author"] == "Alice"
-    assert result["category"] == "n8n-automation"
+    assert "pending_id" in result
 
-    # File exists with author + site lines
-    path = Path(result["file_path"])
-    assert path.exists()
-    content = path.read_text("utf-8")
+    # No file yet
+    assert list(src.config.KNOWLEDGE_DIR.rglob("*.md")) == []
+
+    # Commit
+    file_path = commit_pending(result["pending_id"])
+    assert file_path is not None
+    assert file_path.exists()
+
+    content = file_path.read_text("utf-8")
     assert "**Site:** blog.example.com" in content
     assert "**Author:** Alice" in content
     assert "**Type:** web_article" in content
 
-    # Processed marker
-    assert is_processed(make_content_id("web_article", "https://blog.example.com/n8n"))
+    cid = make_content_id("web_article", "https://blog.example.com/n8n")
+    assert is_processed(cid)
 
-    # Roundtrip
-    info = _parse_entry_metadata(path)
+    info = _parse_entry_metadata(file_path)
     assert info is not None
     assert info["type"] == "web_article"
     assert info["source"] == "blog.example.com"
 
 
-def test_pipeline_dedup_across_calls(tmp_knowledge_dir):
-    """Second call for the same URL is rejected as already-processed."""
+def test_youtube_pipeline_stage_then_reject(tmp_knowledge_dir):
+    """Reject path: stage → reject → no file, but content_id stays processed."""
+    import src.config
+    from src.pipeline import process_youtube_video
+    from src.pending import reject_pending, get_pending
+    from src.storage import is_processed, make_content_id
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={
+            "title": "Spam", "channel": "X", "upload_date": None,
+        }),
+        patch("src.pipeline.get_transcript", return_value="some text"),
+        patch("src.pipeline.summarize_content", return_value=_summary()),
+    ):
+        result = process_youtube_video("https://www.youtube.com/watch?v=rejvid01")
+
+    pending_id = result["pending_id"]
+    assert reject_pending(pending_id) is True
+
+    # No file exists
+    assert list(src.config.KNOWLEDGE_DIR.rglob("*.md")) == []
+
+    # Pending entry is gone
+    assert get_pending(pending_id) is None
+
+    # content_id is still flagged as processed (status="rejected")
+    cid = make_content_id("youtube_video", "rejvid01")
+    assert is_processed(cid)
+
+    # Re-processing the same URL is rejected as already-processed
+    with (
+        patch("src.pipeline.get_video_metadata") as mock_meta,
+        patch("src.pipeline.get_transcript") as mock_t,
+        patch("src.pipeline.summarize_content") as mock_s,
+    ):
+        again = process_youtube_video("https://www.youtube.com/watch?v=rejvid01")
+        assert "error" in again
+        assert "уже обработано" in again["error"]
+        mock_meta.assert_not_called()
+        mock_t.assert_not_called()
+        mock_s.assert_not_called()
+
+
+def test_pipeline_dedup_across_calls_after_stage(tmp_knowledge_dir):
+    """Second call for the same URL is rejected even before approval."""
     from src.pipeline import process_youtube_video
 
     with (

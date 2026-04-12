@@ -83,7 +83,7 @@ def test_shared_returns_error_on_summarize_failure():
 
 
 def test_process_youtube_accepts_upload_date():
-    """process_youtube_video passes upload_date through to save_entry."""
+    """process_youtube_video passes upload_date through to stage_pending."""
     from src.pipeline import process_youtube_video
 
     summary = {
@@ -100,9 +100,9 @@ def test_process_youtube_accepts_upload_date():
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=summary),
-        patch("src.pipeline.save_entry") as mock_save,
+        patch("src.pipeline.stage_pending") as mock_save,
     ):
-        mock_save.return_value = "/fake/path.md"
+        mock_save.return_value = "abc12345"
         result = process_youtube_video(
             "https://www.youtube.com/watch?v=datetest",
             upload_date="2025-01-15",
@@ -146,9 +146,9 @@ def test_process_web_article_happy_path():
     with (
         patch("src.pipeline.extract_web_article", return_value=_article_dict()),
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
-        patch("src.pipeline.save_entry") as mock_save,
+        patch("src.pipeline.stage_pending") as mock_save,
     ):
-        mock_save.return_value = "/fake/path.md"
+        mock_save.return_value = "abc12345"
         result = process_web_article("https://example.com/foo")
 
     assert result is not None
@@ -200,9 +200,9 @@ def test_process_web_article_propagates_author_and_sitename():
     with (
         patch("src.pipeline.extract_web_article", return_value=_article_dict()),
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
-        patch("src.pipeline.save_entry") as mock_save,
+        patch("src.pipeline.stage_pending") as mock_save,
     ):
-        mock_save.return_value = "/fake/path.md"
+        mock_save.return_value = "abc12345"
         process_web_article("https://example.com/foo")
 
     _, kwargs = mock_save.call_args
@@ -229,7 +229,7 @@ def test_pipeline_uses_categorize_fallback_when_no_suggestion():
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=summary),
-        patch("src.pipeline.save_entry", return_value="/fake/path.md"),
+        patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("computed-cat", False)) as mock_cat,
     ):
         result = process_youtube_video("https://www.youtube.com/watch?v=catfb01")
@@ -248,7 +248,7 @@ def test_pipeline_returns_is_new_category_flag():
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=summary),
-        patch("src.pipeline.save_entry", return_value="/fake/path.md"),
+        patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("new-cat", True)),
     ):
         result = process_youtube_video("https://www.youtube.com/watch?v=newcat01")
@@ -256,7 +256,9 @@ def test_pipeline_returns_is_new_category_flag():
     assert result.get("is_new_category") is True
 
 
-def test_pipeline_marks_processed_after_success():
+def test_pipeline_marks_processed_pending_after_stage():
+    """After staging, content_id is marked processed with status='pending'."""
+    import src.storage
     from src.pipeline import process_youtube_video
     from src.storage import is_processed, make_content_id
 
@@ -264,11 +266,29 @@ def test_pipeline_marks_processed_after_success():
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
-        patch("src.pipeline.save_entry", return_value="/fake/path.md"),
+        patch("src.pipeline.stage_pending", return_value="abc12345"),
     ):
         process_youtube_video("https://www.youtube.com/watch?v=marked01")
 
-    assert is_processed(make_content_id("youtube_video", "marked01"))
+    cid = make_content_id("youtube_video", "marked01")
+    assert is_processed(cid)
+    assert src.storage._processed_cache[cid]["status"] == "pending"
+
+
+def test_pipeline_result_has_pending_id_not_file_path():
+    """Pipeline returns pending_id and no longer returns file_path."""
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value="transcript"),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.stage_pending", return_value="deadbeef"),
+    ):
+        result = process_youtube_video("https://www.youtube.com/watch?v=pendid01")
+
+    assert result["pending_id"] == "deadbeef"
+    assert "file_path" not in result
 
 
 def test_pipeline_invalid_video_url_returns_error():

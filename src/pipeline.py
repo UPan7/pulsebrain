@@ -8,8 +8,9 @@ from typing import Any
 from src.categorize import categorize_content
 from src.extractors.web import extract_web_article
 from src.extractors.youtube import get_transcript, get_video_metadata
+from src.pending import stage_pending
 from src.router import extract_video_id
-from src.storage import is_processed, make_content_id, mark_processed, save_entry
+from src.storage import is_processed, make_content_id, mark_processed
 from src.summarize import summarize_content
 
 logger = logging.getLogger(__name__)
@@ -83,27 +84,28 @@ def _process_content(
     if not final_category:
         final_category, is_new_category = categorize_content(title, content)
 
-    # ── Save ────────────────────────────────────────────────────────────────
-    save_kwargs: dict[str, Any] = {
-        "title": title,
+    # ── Stage (awaiting user approval) ──────────────────────────────────────
+    stage_kwargs: dict[str, Any] = {
+        "content_id": content_id,
         "source_url": url,
         "source_type": source_type,
         "source_name": source_name,
+        "title": title,
         "date_str": date_str,
         "category": final_category,
+        "is_new_category": is_new_category,
         "relevance": summary.get("relevance_score", 5),
         "topics": summary.get("topics", []),
         "summary_bullets": summary.get("summary_bullets", []),
         "detailed_notes": summary.get("detailed_notes", ""),
         "key_insights": summary.get("key_insights", []),
         "action_items": summary.get("action_items", []),
+        "author": locals().get("author") if source_type == "web_article" else None,
+        "sitename": locals().get("sitename") if source_type == "web_article" else None,
     }
-    if source_type == "web_article":
-        save_kwargs["author"] = locals().get("author")
-        save_kwargs["sitename"] = locals().get("sitename")
 
-    file_path = save_entry(**save_kwargs)
-    mark_processed(content_id, status="ok")
+    pending_id = stage_pending(**stage_kwargs)
+    mark_processed(content_id, status="pending")
 
     # ── Build result ────────────────────────────────────────────────────────
     result: dict[str, Any] = {
@@ -113,7 +115,7 @@ def _process_content(
         "relevance": summary.get("relevance_score", 5),
         "topics": summary.get("topics", []),
         "summary_bullets": summary.get("summary_bullets", []),
-        "file_path": str(file_path),
+        "pending_id": pending_id,
         "source_url": url,
         "source_type": source_type,
     }

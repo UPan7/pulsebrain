@@ -344,7 +344,7 @@ async def test_cmd_list_no_channels():
         await cmd_list(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "Нет отслеживаемых каналов" in text
+    assert "No monitored channels" in text
 
 
 @pytest.mark.asyncio
@@ -395,7 +395,7 @@ async def test_cmd_add_unresolvable_url():
         await cmd_add(update, ctx)
 
     last_text = update.message.reply_text.call_args_list[-1][0][0]
-    assert "Не удалось" in last_text
+    assert "Couldn't resolve" in last_text
 
 
 @pytest.mark.asyncio
@@ -414,7 +414,7 @@ async def test_cmd_add_already_monitored():
         await cmd_add(update, ctx)
 
     last_text = update.message.reply_text.call_args_list[-1][0][0]
-    assert "уже отслеживается" in last_text
+    assert "already being tracked" in last_text
     mock_save.assert_not_called()
 
 
@@ -504,7 +504,7 @@ async def test_cmd_remove_not_found():
         await cmd_remove(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "не найден" in text
+    assert "not found" in text
     mock_save.assert_not_called()
 
 
@@ -523,7 +523,7 @@ async def test_cmd_categories_empty():
         await cmd_categories(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "Пока нет записей" in text
+    assert "No entries yet" in text
 
 
 @pytest.mark.asyncio
@@ -578,7 +578,7 @@ async def test_cmd_categories_marks_stale():
 
     text = update.message.reply_text.call_args[0][0]
     assert "⚠" in text
-    assert "давно тихо" in text
+    assert "(stale)" in text
 
 
 @pytest.mark.asyncio
@@ -607,7 +607,7 @@ async def test_cmd_search_no_results():
         await cmd_search(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "ничего не найдено" in text
+    assert "Nothing found" in text
 
 
 @pytest.mark.asyncio
@@ -678,7 +678,7 @@ async def test_cmd_recent_empty():
         await cmd_recent(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "Пока нет записей" in text
+    assert "No entries yet" in text
 
 
 @pytest.mark.asyncio
@@ -755,7 +755,7 @@ async def test_cmd_run_no_new_videos():
         await cmd_run(update, ctx)
 
     last_text = update.message.reply_text.call_args_list[-1][0][0]
-    assert "не найдено" in last_text
+    assert "No new videos found" in last_text
 
 
 @pytest.mark.asyncio
@@ -771,7 +771,7 @@ async def test_cmd_pending_empty():
         await cmd_pending(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "пуста" in text
+    assert "queue is empty" in text
 
 
 @pytest.mark.asyncio
@@ -824,7 +824,7 @@ async def test_cmd_rejected_empty_log():
         await cmd_rejected(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "пуст" in text
+    assert "log is empty" in text
 
 
 @pytest.mark.asyncio
@@ -847,9 +847,9 @@ async def test_cmd_rejected_shows_records_with_score_and_reason():
     text = update.message.reply_text.call_args[0][0]
     assert "Docker 101" in text
     assert "Generic listicle" in text
-    assert "рел 2/10" in text
-    assert "рел 3/10" in text
-    assert "низкая релевантность" in text
+    assert "relevance 2/10" in text
+    assert "relevance 3/10" in text
+    assert "low relevance" in text
     assert "NoiseMaker" in text
 
 
@@ -914,7 +914,7 @@ async def test_cmd_rejected_maps_manual_reason():
         await cmd_rejected(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert "вручную" in text
+    assert "manual" in text
 
 
 # ── URL handlers ───────────────────────────────────────────────────────────
@@ -949,7 +949,7 @@ async def test_handle_youtube_video_none_result():
         await _handle_youtube_video(update, ctx, "https://youtube.com/watch?v=x")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "неизвестная ошибка" in text
+    assert "Unknown error" in text
 
 
 @pytest.mark.asyncio
@@ -984,7 +984,7 @@ async def test_handle_youtube_channel_already_monitored():
         await _handle_youtube_channel(update, ctx, "https://youtube.com/@chan")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "уже отслеживается" in text
+    assert "already being tracked" in text
 
 
 @pytest.mark.asyncio
@@ -997,7 +997,7 @@ async def test_handle_youtube_channel_unresolvable():
         await _handle_youtube_channel(update, ctx, "https://youtube.com/@nope")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "Не удалось" in text
+    assert ("Couldn't resolve" in text or "Failed" in text)
 
 
 @pytest.mark.asyncio
@@ -1027,7 +1027,7 @@ async def test_handle_web_article_none_result():
         await _handle_web_article(update, ctx, "https://example.com/foo")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "неизвестная ошибка" in text
+    assert "Unknown error" in text
 
 
 # ── Question handler ───────────────────────────────────────────────────────
@@ -1043,7 +1043,7 @@ async def test_handle_question_no_results():
         await _handle_question(update, ctx, "What is X?")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "ничего не собрано" in text
+    assert "Nothing collected" in text
 
 
 @pytest.mark.asyncio
@@ -1079,7 +1079,7 @@ async def test_handle_question_answer_failure():
         await _handle_question(update, ctx, "Q")
 
     text = update.message.reply_text.return_value.edit_text.call_args[0][0]
-    assert "Не удалось" in text
+    assert ("Couldn't resolve" in text or "Failed" in text)
 
 
 # ── New-category input ────────────────────────────────────────────────────
@@ -1097,7 +1097,7 @@ async def test_handle_new_category_input_invalid_slug_reprompts():
     mock_add.assert_not_called()
     assert ctx.user_data["waiting_new_category"] == "add_channel"
     text = update.message.reply_text.call_args[0][0]
-    assert "Некорректный" in text
+    assert "Invalid slug" in text
 
 
 @pytest.mark.asyncio
@@ -1152,7 +1152,7 @@ async def test_handle_new_category_input_pending_lost_entry():
         await _handle_new_category_input(update, ctx, "robotics", "pending:deadbeef")
 
     text = update.message.reply_text.call_args[0][0]
-    assert "больше не в очереди" in text
+    assert "no longer in the queue" in text
 
 
 @pytest.mark.asyncio
@@ -1169,7 +1169,7 @@ async def test_handle_new_category_input_add_channel_lost_pending():
 
     mock_save.assert_not_called()
     text = update.message.reply_text.call_args[0][0]
-    assert "потеряны" in text
+    assert "lost" in text
 
 
 # ── Inline keyboard callbacks ──────────────────────────────────────────────
@@ -1223,7 +1223,7 @@ async def test_callback_psave_commits_and_persists_new_category():
     assert mock_tt.call_args[0][0] is commit_pending
     update.callback_query.edit_message_text.assert_called_once()
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "Сохранено" in text
+    assert "Saved" in text
 
 
 @pytest.mark.asyncio
@@ -1236,7 +1236,7 @@ async def test_callback_psave_unknown_id():
         await callback_handler(update, ctx)
 
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "больше не в очереди" in text
+    assert "no longer in queue" in text
 
 
 @pytest.mark.asyncio
@@ -1252,7 +1252,7 @@ async def test_callback_psave_commit_fails():
         await callback_handler(update, ctx)
 
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "Не удалось" in text
+    assert ("Couldn't resolve" in text or "Failed" in text)
 
 
 @pytest.mark.asyncio
@@ -1269,7 +1269,7 @@ async def test_callback_pskip_rejects_entry():
 
     mock_rej.assert_called_once_with("deadbeef")
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "Отклонено" in text
+    assert "Rejected" in text
 
 
 @pytest.mark.asyncio
@@ -1282,7 +1282,7 @@ async def test_callback_pskip_unknown_id():
         await callback_handler(update, ctx)
 
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "больше не в очереди" in text
+    assert "no longer in queue" in text
 
 
 @pytest.mark.asyncio
@@ -1310,7 +1310,7 @@ async def test_callback_pcat_unknown_id():
         await callback_handler(update, ctx)
 
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "больше не в очереди" in text
+    assert "no longer in queue" in text
 
 
 @pytest.mark.asyncio
@@ -1351,7 +1351,7 @@ async def test_callback_psetc_unknown_id():
         await callback_handler(update, ctx)
 
     text = update.callback_query.edit_message_text.call_args[0][0]
-    assert "больше не в очереди" in text
+    assert "no longer in queue" in text
 
 
 @pytest.mark.asyncio
@@ -1381,7 +1381,7 @@ async def test_callback_add_channel_no_pending():
 
     mock_save.assert_not_called()
     text = update.callback_query.message.reply_text.call_args[0][0]
-    assert "потеряны" in text
+    assert "lost" in text
 
 
 @pytest.mark.asyncio
@@ -1424,7 +1424,7 @@ async def test_callback_fetch_skip():
     await callback_handler(update, ctx)
 
     text = update.callback_query.message.reply_text.call_args[0][0]
-    assert "Хорошо" in text
+    assert "OK" in text
 
 
 # ── Notifications + setup ──────────────────────────────────────────────────

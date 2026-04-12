@@ -194,6 +194,110 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Да, перенастроить",
         "onboarding_rerun_no": "🛑 Нет, оставить как есть",
         "onboarding_kept_existing": "👌 Оставил как есть.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Саммари",
+        "pending_category_label": "Категория",
+        "pending_new_cat_marker": " 🆕 (новая!)",
+        "pending_relevance_label": "Релевантность",
+        "pending_awaiting_label": "⏳ Ожидает подтверждения",
+        "pending_btn_save": "✅ Сохранить",
+        "pending_btn_reject": "❌ Отклонить",
+        "pending_btn_category": "🔄 Категория",
+        "pending_btn_new_category": "➕ Новая категория",
+        "pending_saved_suffix": "\n\n✅ Сохранено: {path}",
+        "pending_rejected_suffix": "\n\n❌ Отклонено",
+        "pending_record_gone": "⚠️ Запись больше не в очереди.",
+        "pending_save_failed": "⚠️ Не удалось сохранить запись.",
+        "list_empty": "📡 Нет отслеживаемых каналов.",
+        "list_header": "📡 Отслеживаемые каналы:\n",
+        "add_usage": "Использование: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Определяю канал...",
+        "add_resolve_failed": "⚠️ Не удалось определить канал по ссылке.",
+        "add_already_tracked": "Канал {name} уже отслеживается.",
+        "add_added_to_category": "✅ Канал {name} добавлен в категорию {category}.",
+        "add_pick_category": "📡 Канал: {name}\nВыбери категорию:",
+        "remove_usage": "Использование: /remove <channel_name>",
+        "remove_disabled": "⏸ Канал {name} отключён.",
+        "remove_not_found": "Канал '{name}' не найден.",
+        "categories_empty": "📂 Пока нет записей.",
+        "categories_header": "📂 Категории:\n",
+        "categories_stale_marker": " (давно тихо)",
+        "categories_entry_count": "{count} записей",
+        "categories_item_line": "    ⭐ avg {avg}   📅 последняя: {last}",
+        "search_usage": "Использование: /search <запрос>",
+        "search_nothing": "🔍 По запросу \"{query}\" ничего не найдено.",
+        "search_found_header": "🔍 Найдено {count} результатов по \"{query}\":\n",
+        "recent_empty": "📋 Пока нет записей.",
+        "recent_header": "📋 Последние {count} записей:\n",
+        "status_body": (
+            "📁 Записей: {total}\n"
+            "📺 Видео: {videos}\n"
+            "📰 Статей: {articles}\n"
+            "📡 Каналов: {active}/{all}\n"
+            "📊 Средняя релевантность: {avg}/10\n"
+            "📅 За эту неделю: {this_week}\n"
+        ),
+        "run_starting": "🔄 Запускаю проверку каналов...",
+        "run_processed": "✅ Обработано {count} новых видео.",
+        "run_nothing": "✅ Новых видео не найдено.",
+        "pending_queue_empty": "📭 Очередь на подтверждение пуста.",
+        "pending_queue_header": "⏳ В очереди: {count} (показываю последние 10)",
+        "reject_reason_low_relevance": "низкая релевантность",
+        "reject_reason_manual": "вручную",
+        "rejected_empty": (
+            "📭 Лог отклонённых пуст.\n"
+            "Ничего не было авто-отклонено — либо порог релевантности "
+            "достаточно мягкий, либо новых видео пока не было."
+        ),
+        "rejected_header": "❌ Последние {count} отклонённых:\n",
+        "processing_video": "⏳ Обрабатываю видео...",
+        "processing_unknown_error": "⚠️ Произошла неизвестная ошибка.",
+        "processing_article": "⏳ Читаю статью...",
+        "channel_add_pick_category": (
+            "📡 Канал: {name}\n"
+            "Добавить в мониторинг?\n\n"
+            "Выбери категорию:"
+        ),
+        "qa_searching": "🔍 Ищу в базе знаний...",
+        "qa_nothing": (
+            "🤷 По этой теме пока ничего не собрано.\n"
+            "Попробуй уточнить запрос или скинь мне ссылку на материал по этой теме."
+        ),
+        "qa_failed": "⚠️ Не удалось сформировать ответ. Попробуй позже.",
+        "qa_answer_header": "🧠 На основе {count} источников:",
+        "qa_sources_header": "📚 Источники:",
+        "new_cat_invalid_slug": (
+            "⚠️ Некорректный slug. Используй латиницу, цифры и дефис "
+            "(до 30 символов)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Категория `{slug}` создана, но данные канала потеряны. "
+            "Попробуй /add ещё раз."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Категория `{slug}` создана.\n"
+            "✅ Канал {name} добавлен.\n\n"
+            "Загрузить последние 3 видео?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Категория `{slug}` создана, но запись больше не в очереди."
+        ),
+        "new_cat_prompt": (
+            "✏️ Введи slug новой категории (например: `machine-learning`).\n"
+            "Можно через пробел добавить описание:"
+        ),
+        "new_cat_btn_yes": "✅ Да",
+        "new_cat_btn_no": "❌ Нет",
+        "channel_data_lost": "⚠️ Данные канала потеряны, попробуйте ещё раз.",
+        "channel_added_fetch_prompt": (
+            "✅ Канал {name} добавлен в категорию {category}.\n\n"
+            "Загрузить последние 3 видео?"
+        ),
+        "fetch_starting": "⏳ Загружаю последние видео...",
+        "fetch_processed": "✅ Обработано {done} из {total} видео.",
+        "fetch_skipped": "👌 Хорошо, видео не загружены.",
+        "error_notify_body": "⚠️ Ошибка при обработке:\n{title}\n{error}",
     },
     "en": {
         # ── /start, /help ──
@@ -314,6 +418,112 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Yes, redo it",
         "onboarding_rerun_no": "🛑 No, keep it",
         "onboarding_kept_existing": "👌 Keeping it as is.",
+
+        # ── Phase 7.3a: pending / commands / link processing ──
+        "pending_summary_label": "Summary",
+        "pending_category_label": "Category",
+        "pending_new_cat_marker": " 🆕 (new!)",
+        "pending_relevance_label": "Relevance",
+        "pending_awaiting_label": "⏳ Awaiting approval",
+        "pending_btn_save": "✅ Save",
+        "pending_btn_reject": "❌ Reject",
+        "pending_btn_category": "🔄 Category",
+        "pending_btn_new_category": "➕ New category",
+        "pending_saved_suffix": "\n\n✅ Saved: {path}",
+        "pending_rejected_suffix": "\n\n❌ Rejected",
+        "pending_record_gone": "⚠️ Entry no longer in queue.",
+        "pending_save_failed": "⚠️ Failed to save entry.",
+        "list_empty": "📡 No monitored channels.",
+        "list_header": "📡 Monitored channels:\n",
+        "add_usage": "Usage: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Resolving channel...",
+        "add_resolve_failed": "⚠️ Couldn't resolve the channel from that link.",
+        "add_already_tracked": "Channel {name} is already being tracked.",
+        "add_added_to_category": "✅ Channel {name} added to category {category}.",
+        "add_pick_category": "📡 Channel: {name}\nPick a category:",
+        "remove_usage": "Usage: /remove <channel_name>",
+        "remove_disabled": "⏸ Channel {name} disabled.",
+        "remove_not_found": "Channel '{name}' not found.",
+        "categories_empty": "📂 No entries yet.",
+        "categories_header": "📂 Categories:\n",
+        "categories_stale_marker": " (stale)",
+        "categories_entry_count": "{count} entries",
+        "categories_item_line": "    ⭐ avg {avg}   📅 last: {last}",
+        "search_usage": "Usage: /search <query>",
+        "search_nothing": "🔍 Nothing found for \"{query}\".",
+        "search_found_header": "🔍 Found {count} results for \"{query}\":\n",
+        "recent_empty": "📋 No entries yet.",
+        "recent_header": "📋 Last {count} entries:\n",
+        "status_body": (
+            "📁 Entries: {total}\n"
+            "📺 Videos: {videos}\n"
+            "📰 Articles: {articles}\n"
+            "📡 Channels: {active}/{all}\n"
+            "📊 Avg relevance: {avg}/10\n"
+            "📅 This week: {this_week}\n"
+        ),
+        "run_starting": "🔄 Running channel check...",
+        "run_processed": "✅ Processed {count} new videos.",
+        "run_nothing": "✅ No new videos found.",
+        "pending_queue_empty": "📭 Approval queue is empty.",
+        "pending_queue_header": "⏳ In queue: {count} (showing last 10)",
+        "reject_reason_low_relevance": "low relevance",
+        "reject_reason_manual": "manual",
+        "rejected_empty": (
+            "📭 Rejected log is empty.\n"
+            "Nothing was auto-rejected — either the relevance threshold "
+            "is soft enough, or no new videos arrived yet."
+        ),
+        "rejected_header": "❌ Last {count} rejected:\n",
+        "processing_video": "⏳ Processing video...",
+        "processing_unknown_error": "⚠️ Unknown error occurred.",
+        "processing_article": "⏳ Reading article...",
+        "channel_add_pick_category": (
+            "📡 Channel: {name}\n"
+            "Add to monitoring?\n\n"
+            "Pick a category:"
+        ),
+        "qa_searching": "🔍 Searching knowledge base...",
+        "qa_nothing": (
+            "🤷 Nothing collected on this topic yet.\n"
+            "Try refining the query or drop me a link on the subject."
+        ),
+        "qa_failed": "⚠️ Failed to produce an answer. Try later.",
+        "qa_answer_header": "🧠 Based on {count} sources:",
+        "qa_sources_header": "📚 Sources:",
+        "new_cat_invalid_slug": (
+            "⚠️ Invalid slug. Use ASCII letters, digits, and dashes "
+            "(max 30 chars)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Category `{slug}` created, but channel data was lost. "
+            "Try /add again."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Category `{slug}` created.\n"
+            "✅ Channel {name} added.\n\n"
+            "Fetch the last 3 videos?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Category `{slug}` created, but the entry is no longer in "
+            "the queue."
+        ),
+        "new_cat_prompt": (
+            "✏️ Enter the slug for the new category "
+            "(e.g. `machine-learning`).\n"
+            "Optionally add a description after a space:"
+        ),
+        "new_cat_btn_yes": "✅ Yes",
+        "new_cat_btn_no": "❌ No",
+        "channel_data_lost": "⚠️ Channel data lost, please try again.",
+        "channel_added_fetch_prompt": (
+            "✅ Channel {name} added to category {category}.\n\n"
+            "Fetch the last 3 videos?"
+        ),
+        "fetch_starting": "⏳ Fetching latest videos...",
+        "fetch_processed": "✅ Processed {done} out of {total} videos.",
+        "fetch_skipped": "👌 OK, videos not fetched.",
+        "error_notify_body": "⚠️ Error while processing:\n{title}\n{error}",
     },
     "de": {
         "welcome_returning": (
@@ -423,6 +633,114 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Ja, neu einrichten",
         "onboarding_rerun_no": "🛑 Nein, so lassen",
         "onboarding_kept_existing": "👌 Alles gelassen.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Zusammenfassung",
+        "pending_category_label": "Kategorie",
+        "pending_new_cat_marker": " 🆕 (neu!)",
+        "pending_relevance_label": "Relevanz",
+        "pending_awaiting_label": "⏳ Wartet auf Bestätigung",
+        "pending_btn_save": "✅ Speichern",
+        "pending_btn_reject": "❌ Ablehnen",
+        "pending_btn_category": "🔄 Kategorie",
+        "pending_btn_new_category": "➕ Neue Kategorie",
+        "pending_saved_suffix": "\n\n✅ Gespeichert: {path}",
+        "pending_rejected_suffix": "\n\n❌ Abgelehnt",
+        "pending_record_gone": "⚠️ Eintrag nicht mehr in der Warteschlange.",
+        "pending_save_failed": "⚠️ Speichern fehlgeschlagen.",
+        "list_empty": "📡 Keine überwachten Kanäle.",
+        "list_header": "📡 Überwachte Kanäle:\n",
+        "add_usage": "Verwendung: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Kanal wird aufgelöst...",
+        "add_resolve_failed": "⚠️ Konnte den Kanal aus dem Link nicht ermitteln.",
+        "add_already_tracked": "Kanal {name} wird bereits überwacht.",
+        "add_added_to_category": "✅ Kanal {name} zur Kategorie {category} hinzugefügt.",
+        "add_pick_category": "📡 Kanal: {name}\nWähle eine Kategorie:",
+        "remove_usage": "Verwendung: /remove <channel_name>",
+        "remove_disabled": "⏸ Kanal {name} deaktiviert.",
+        "remove_not_found": "Kanal '{name}' nicht gefunden.",
+        "categories_empty": "📂 Noch keine Einträge.",
+        "categories_header": "📂 Kategorien:\n",
+        "categories_stale_marker": " (veraltet)",
+        "categories_entry_count": "{count} Einträge",
+        "categories_item_line": "    ⭐ Ø {avg}   📅 letzte: {last}",
+        "search_usage": "Verwendung: /search <query>",
+        "search_nothing": "🔍 Nichts gefunden für \"{query}\".",
+        "search_found_header": "🔍 {count} Ergebnisse für \"{query}\":\n",
+        "recent_empty": "📋 Noch keine Einträge.",
+        "recent_header": "📋 Letzte {count} Einträge:\n",
+        "status_body": (
+            "📁 Einträge: {total}\n"
+            "📺 Videos: {videos}\n"
+            "📰 Artikel: {articles}\n"
+            "📡 Kanäle: {active}/{all}\n"
+            "📊 Ø Relevanz: {avg}/10\n"
+            "📅 Diese Woche: {this_week}\n"
+        ),
+        "run_starting": "🔄 Starte Kanalprüfung...",
+        "run_processed": "✅ {count} neue Videos verarbeitet.",
+        "run_nothing": "✅ Keine neuen Videos gefunden.",
+        "pending_queue_empty": "📭 Bestätigungswarteschlange ist leer.",
+        "pending_queue_header": "⏳ In der Warteschlange: {count} (zeige die letzten 10)",
+        "reject_reason_low_relevance": "niedrige Relevanz",
+        "reject_reason_manual": "manuell",
+        "rejected_empty": (
+            "📭 Ablehnungsprotokoll ist leer.\n"
+            "Nichts wurde automatisch abgelehnt — entweder ist die "
+            "Relevanzschwelle mild genug, oder es sind noch keine neuen "
+            "Videos eingetroffen."
+        ),
+        "rejected_header": "❌ Letzte {count} abgelehnte:\n",
+        "processing_video": "⏳ Video wird verarbeitet...",
+        "processing_unknown_error": "⚠️ Unbekannter Fehler aufgetreten.",
+        "processing_article": "⏳ Artikel wird gelesen...",
+        "channel_add_pick_category": (
+            "📡 Kanal: {name}\n"
+            "Zur Überwachung hinzufügen?\n\n"
+            "Wähle eine Kategorie:"
+        ),
+        "qa_searching": "🔍 Durchsuche Wissensdatenbank...",
+        "qa_nothing": (
+            "🤷 Zu diesem Thema wurde noch nichts gesammelt.\n"
+            "Versuche die Anfrage zu präzisieren oder sende mir einen "
+            "Link zu diesem Thema."
+        ),
+        "qa_failed": "⚠️ Antwort konnte nicht erstellt werden. Versuche es später.",
+        "qa_answer_header": "🧠 Basierend auf {count} Quellen:",
+        "qa_sources_header": "📚 Quellen:",
+        "new_cat_invalid_slug": (
+            "⚠️ Ungültiger Slug. Verwende ASCII-Buchstaben, Ziffern und "
+            "Bindestriche (max. 30 Zeichen)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Kategorie `{slug}` erstellt, aber Kanaldaten verloren. "
+            "Versuche /add erneut."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Kategorie `{slug}` erstellt.\n"
+            "✅ Kanal {name} hinzugefügt.\n\n"
+            "Die letzten 3 Videos abrufen?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Kategorie `{slug}` erstellt, aber der Eintrag ist nicht "
+            "mehr in der Warteschlange."
+        ),
+        "new_cat_prompt": (
+            "✏️ Gib den Slug der neuen Kategorie ein "
+            "(z.B. `machine-learning`).\n"
+            "Optional nach einem Leerzeichen eine Beschreibung anhängen:"
+        ),
+        "new_cat_btn_yes": "✅ Ja",
+        "new_cat_btn_no": "❌ Nein",
+        "channel_data_lost": "⚠️ Kanaldaten verloren, bitte erneut versuchen.",
+        "channel_added_fetch_prompt": (
+            "✅ Kanal {name} zur Kategorie {category} hinzugefügt.\n\n"
+            "Die letzten 3 Videos abrufen?"
+        ),
+        "fetch_starting": "⏳ Aktuelle Videos werden abgerufen...",
+        "fetch_processed": "✅ {done} von {total} Videos verarbeitet.",
+        "fetch_skipped": "👌 OK, Videos werden nicht abgerufen.",
+        "error_notify_body": "⚠️ Fehler bei der Verarbeitung:\n{title}\n{error}",
     },
     "fr": {
         "welcome_returning": (
@@ -533,6 +851,112 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Oui, refaire",
         "onboarding_rerun_no": "🛑 Non, garder tel quel",
         "onboarding_kept_existing": "👌 Conservé tel quel.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Résumé",
+        "pending_category_label": "Catégorie",
+        "pending_new_cat_marker": " 🆕 (nouveau !)",
+        "pending_relevance_label": "Pertinence",
+        "pending_awaiting_label": "⏳ En attente d'approbation",
+        "pending_btn_save": "✅ Enregistrer",
+        "pending_btn_reject": "❌ Rejeter",
+        "pending_btn_category": "🔄 Catégorie",
+        "pending_btn_new_category": "➕ Nouvelle catégorie",
+        "pending_saved_suffix": "\n\n✅ Enregistré : {path}",
+        "pending_rejected_suffix": "\n\n❌ Rejeté",
+        "pending_record_gone": "⚠️ Entrée plus dans la file.",
+        "pending_save_failed": "⚠️ Échec de l'enregistrement.",
+        "list_empty": "📡 Aucune chaîne surveillée.",
+        "list_header": "📡 Chaînes surveillées :\n",
+        "add_usage": "Utilisation : /add <youtube_url> [category]",
+        "add_resolving": "⏳ Résolution de la chaîne...",
+        "add_resolve_failed": "⚠️ Impossible d'identifier la chaîne depuis ce lien.",
+        "add_already_tracked": "La chaîne {name} est déjà suivie.",
+        "add_added_to_category": "✅ Chaîne {name} ajoutée à la catégorie {category}.",
+        "add_pick_category": "📡 Chaîne : {name}\nChoisis une catégorie :",
+        "remove_usage": "Utilisation : /remove <channel_name>",
+        "remove_disabled": "⏸ Chaîne {name} désactivée.",
+        "remove_not_found": "Chaîne '{name}' introuvable.",
+        "categories_empty": "📂 Pas encore d'entrées.",
+        "categories_header": "📂 Catégories :\n",
+        "categories_stale_marker": " (obsolète)",
+        "categories_entry_count": "{count} entrées",
+        "categories_item_line": "    ⭐ moy {avg}   📅 dernière : {last}",
+        "search_usage": "Utilisation : /search <requête>",
+        "search_nothing": "🔍 Rien trouvé pour \"{query}\".",
+        "search_found_header": "🔍 {count} résultats pour \"{query}\" :\n",
+        "recent_empty": "📋 Pas encore d'entrées.",
+        "recent_header": "📋 {count} dernières entrées :\n",
+        "status_body": (
+            "📁 Entrées : {total}\n"
+            "📺 Vidéos : {videos}\n"
+            "📰 Articles : {articles}\n"
+            "📡 Chaînes : {active}/{all}\n"
+            "📊 Pertinence moy : {avg}/10\n"
+            "📅 Cette semaine : {this_week}\n"
+        ),
+        "run_starting": "🔄 Lancement de la vérification des chaînes...",
+        "run_processed": "✅ {count} nouvelles vidéos traitées.",
+        "run_nothing": "✅ Aucune nouvelle vidéo trouvée.",
+        "pending_queue_empty": "📭 File d'approbation vide.",
+        "pending_queue_header": "⏳ En file : {count} (10 dernières affichées)",
+        "reject_reason_low_relevance": "pertinence faible",
+        "reject_reason_manual": "manuel",
+        "rejected_empty": (
+            "📭 Journal des rejets vide.\n"
+            "Rien n'a été auto-rejeté — soit le seuil de pertinence est "
+            "assez souple, soit aucune nouvelle vidéo n'est encore arrivée."
+        ),
+        "rejected_header": "❌ {count} derniers rejets :\n",
+        "processing_video": "⏳ Traitement de la vidéo...",
+        "processing_unknown_error": "⚠️ Erreur inconnue.",
+        "processing_article": "⏳ Lecture de l'article...",
+        "channel_add_pick_category": (
+            "📡 Chaîne : {name}\n"
+            "Ajouter à la surveillance ?\n\n"
+            "Choisis une catégorie :"
+        ),
+        "qa_searching": "🔍 Recherche dans la base...",
+        "qa_nothing": (
+            "🤷 Rien de collecté sur ce sujet pour l'instant.\n"
+            "Essaie de préciser la requête ou envoie-moi un lien."
+        ),
+        "qa_failed": "⚠️ Impossible de produire une réponse. Réessaie plus tard.",
+        "qa_answer_header": "🧠 D'après {count} sources :",
+        "qa_sources_header": "📚 Sources :",
+        "new_cat_invalid_slug": (
+            "⚠️ Slug invalide. Utilise des lettres ASCII, des chiffres "
+            "et des tirets (max 30 caractères)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Catégorie `{slug}` créée, mais les données de la chaîne "
+            "sont perdues. Réessaie /add."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Catégorie `{slug}` créée.\n"
+            "✅ Chaîne {name} ajoutée.\n\n"
+            "Récupérer les 3 dernières vidéos ?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Catégorie `{slug}` créée, mais l'entrée n'est plus dans "
+            "la file."
+        ),
+        "new_cat_prompt": (
+            "✏️ Entre le slug de la nouvelle catégorie "
+            "(ex. `machine-learning`).\n"
+            "Tu peux ajouter une description après un espace :"
+        ),
+        "new_cat_btn_yes": "✅ Oui",
+        "new_cat_btn_no": "❌ Non",
+        "channel_data_lost": "⚠️ Données de la chaîne perdues, réessaie.",
+        "channel_added_fetch_prompt": (
+            "✅ Chaîne {name} ajoutée à la catégorie {category}.\n\n"
+            "Récupérer les 3 dernières vidéos ?"
+        ),
+        "fetch_starting": "⏳ Récupération des dernières vidéos...",
+        "fetch_processed": "✅ {done} sur {total} vidéos traitées.",
+        "fetch_skipped": "👌 OK, les vidéos ne seront pas récupérées.",
+        "error_notify_body": "⚠️ Erreur lors du traitement :\n{title}\n{error}",
     },
     "es": {
         "welcome_returning": (
@@ -642,6 +1066,112 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Sí, rehacer",
         "onboarding_rerun_no": "🛑 No, dejarlo así",
         "onboarding_kept_existing": "👌 Lo dejé como está.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Resumen",
+        "pending_category_label": "Categoría",
+        "pending_new_cat_marker": " 🆕 (¡nueva!)",
+        "pending_relevance_label": "Relevancia",
+        "pending_awaiting_label": "⏳ Esperando aprobación",
+        "pending_btn_save": "✅ Guardar",
+        "pending_btn_reject": "❌ Rechazar",
+        "pending_btn_category": "🔄 Categoría",
+        "pending_btn_new_category": "➕ Nueva categoría",
+        "pending_saved_suffix": "\n\n✅ Guardado: {path}",
+        "pending_rejected_suffix": "\n\n❌ Rechazado",
+        "pending_record_gone": "⚠️ La entrada ya no está en la cola.",
+        "pending_save_failed": "⚠️ No se pudo guardar la entrada.",
+        "list_empty": "📡 Sin canales monitorizados.",
+        "list_header": "📡 Canales monitorizados:\n",
+        "add_usage": "Uso: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Resolviendo canal...",
+        "add_resolve_failed": "⚠️ No se pudo identificar el canal desde ese enlace.",
+        "add_already_tracked": "El canal {name} ya está siendo monitorizado.",
+        "add_added_to_category": "✅ Canal {name} añadido a la categoría {category}.",
+        "add_pick_category": "📡 Canal: {name}\nElige una categoría:",
+        "remove_usage": "Uso: /remove <channel_name>",
+        "remove_disabled": "⏸ Canal {name} desactivado.",
+        "remove_not_found": "Canal '{name}' no encontrado.",
+        "categories_empty": "📂 Aún no hay entradas.",
+        "categories_header": "📂 Categorías:\n",
+        "categories_stale_marker": " (inactiva)",
+        "categories_entry_count": "{count} entradas",
+        "categories_item_line": "    ⭐ media {avg}   📅 última: {last}",
+        "search_usage": "Uso: /search <consulta>",
+        "search_nothing": "🔍 Nada encontrado para \"{query}\".",
+        "search_found_header": "🔍 Encontrados {count} resultados para \"{query}\":\n",
+        "recent_empty": "📋 Aún no hay entradas.",
+        "recent_header": "📋 Últimas {count} entradas:\n",
+        "status_body": (
+            "📁 Entradas: {total}\n"
+            "📺 Vídeos: {videos}\n"
+            "📰 Artículos: {articles}\n"
+            "📡 Canales: {active}/{all}\n"
+            "📊 Relevancia media: {avg}/10\n"
+            "📅 Esta semana: {this_week}\n"
+        ),
+        "run_starting": "🔄 Comprobando canales...",
+        "run_processed": "✅ Procesados {count} vídeos nuevos.",
+        "run_nothing": "✅ No se encontraron vídeos nuevos.",
+        "pending_queue_empty": "📭 La cola de aprobación está vacía.",
+        "pending_queue_header": "⏳ En cola: {count} (mostrando las últimas 10)",
+        "reject_reason_low_relevance": "relevancia baja",
+        "reject_reason_manual": "manual",
+        "rejected_empty": (
+            "📭 Registro de rechazados vacío.\n"
+            "Nada fue auto-rechazado — el umbral de relevancia es "
+            "suficientemente suave o aún no han llegado vídeos nuevos."
+        ),
+        "rejected_header": "❌ Últimos {count} rechazados:\n",
+        "processing_video": "⏳ Procesando vídeo...",
+        "processing_unknown_error": "⚠️ Ocurrió un error desconocido.",
+        "processing_article": "⏳ Leyendo artículo...",
+        "channel_add_pick_category": (
+            "📡 Canal: {name}\n"
+            "¿Añadir a la monitorización?\n\n"
+            "Elige una categoría:"
+        ),
+        "qa_searching": "🔍 Buscando en la base de conocimiento...",
+        "qa_nothing": (
+            "🤷 Nada recopilado sobre este tema todavía.\n"
+            "Prueba a afinar la consulta o envíame un enlace sobre el tema."
+        ),
+        "qa_failed": "⚠️ No se pudo generar una respuesta. Inténtalo luego.",
+        "qa_answer_header": "🧠 Basado en {count} fuentes:",
+        "qa_sources_header": "📚 Fuentes:",
+        "new_cat_invalid_slug": (
+            "⚠️ Slug inválido. Usa letras ASCII, dígitos y guiones "
+            "(máx 30 caracteres)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Categoría `{slug}` creada, pero los datos del canal se "
+            "perdieron. Intenta /add de nuevo."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Categoría `{slug}` creada.\n"
+            "✅ Canal {name} añadido.\n\n"
+            "¿Obtener los últimos 3 vídeos?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Categoría `{slug}` creada, pero la entrada ya no está "
+            "en la cola."
+        ),
+        "new_cat_prompt": (
+            "✏️ Introduce el slug de la nueva categoría "
+            "(p. ej. `machine-learning`).\n"
+            "Opcionalmente añade una descripción tras un espacio:"
+        ),
+        "new_cat_btn_yes": "✅ Sí",
+        "new_cat_btn_no": "❌ No",
+        "channel_data_lost": "⚠️ Datos del canal perdidos, inténtalo de nuevo.",
+        "channel_added_fetch_prompt": (
+            "✅ Canal {name} añadido a la categoría {category}.\n\n"
+            "¿Obtener los últimos 3 vídeos?"
+        ),
+        "fetch_starting": "⏳ Obteniendo últimos vídeos...",
+        "fetch_processed": "✅ Procesados {done} de {total} vídeos.",
+        "fetch_skipped": "👌 Vale, los vídeos no se obtendrán.",
+        "error_notify_body": "⚠️ Error al procesar:\n{title}\n{error}",
     },
     "it": {
         "welcome_returning": (
@@ -750,6 +1280,111 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Sì, rifare",
         "onboarding_rerun_no": "🛑 No, lasciare così",
         "onboarding_kept_existing": "👌 Lasciato così com'è.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Riepilogo",
+        "pending_category_label": "Categoria",
+        "pending_new_cat_marker": " 🆕 (nuova!)",
+        "pending_relevance_label": "Rilevanza",
+        "pending_awaiting_label": "⏳ In attesa di approvazione",
+        "pending_btn_save": "✅ Salva",
+        "pending_btn_reject": "❌ Rifiuta",
+        "pending_btn_category": "🔄 Categoria",
+        "pending_btn_new_category": "➕ Nuova categoria",
+        "pending_saved_suffix": "\n\n✅ Salvato: {path}",
+        "pending_rejected_suffix": "\n\n❌ Rifiutato",
+        "pending_record_gone": "⚠️ Voce non più in coda.",
+        "pending_save_failed": "⚠️ Salvataggio fallito.",
+        "list_empty": "📡 Nessun canale monitorato.",
+        "list_header": "📡 Canali monitorati:\n",
+        "add_usage": "Uso: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Risolvo il canale...",
+        "add_resolve_failed": "⚠️ Impossibile identificare il canale da quel link.",
+        "add_already_tracked": "Il canale {name} è già monitorato.",
+        "add_added_to_category": "✅ Canale {name} aggiunto alla categoria {category}.",
+        "add_pick_category": "📡 Canale: {name}\nScegli una categoria:",
+        "remove_usage": "Uso: /remove <channel_name>",
+        "remove_disabled": "⏸ Canale {name} disabilitato.",
+        "remove_not_found": "Canale '{name}' non trovato.",
+        "categories_empty": "📂 Nessuna voce ancora.",
+        "categories_header": "📂 Categorie:\n",
+        "categories_stale_marker": " (obsoleta)",
+        "categories_entry_count": "{count} voci",
+        "categories_item_line": "    ⭐ media {avg}   📅 ultima: {last}",
+        "search_usage": "Uso: /search <query>",
+        "search_nothing": "🔍 Nulla trovato per \"{query}\".",
+        "search_found_header": "🔍 Trovati {count} risultati per \"{query}\":\n",
+        "recent_empty": "📋 Nessuna voce ancora.",
+        "recent_header": "📋 Ultime {count} voci:\n",
+        "status_body": (
+            "📁 Voci: {total}\n"
+            "📺 Video: {videos}\n"
+            "📰 Articoli: {articles}\n"
+            "📡 Canali: {active}/{all}\n"
+            "📊 Rilevanza media: {avg}/10\n"
+            "📅 Questa settimana: {this_week}\n"
+        ),
+        "run_starting": "🔄 Avvio controllo canali...",
+        "run_processed": "✅ Elaborati {count} nuovi video.",
+        "run_nothing": "✅ Nessun video nuovo trovato.",
+        "pending_queue_empty": "📭 La coda di approvazione è vuota.",
+        "pending_queue_header": "⏳ In coda: {count} (mostro le ultime 10)",
+        "reject_reason_low_relevance": "bassa rilevanza",
+        "reject_reason_manual": "manuale",
+        "rejected_empty": (
+            "📭 Registro dei rifiutati vuoto.\n"
+            "Niente è stato auto-rifiutato — o la soglia di rilevanza è "
+            "abbastanza morbida, o non sono ancora arrivati nuovi video."
+        ),
+        "rejected_header": "❌ Ultimi {count} rifiutati:\n",
+        "processing_video": "⏳ Elaboro il video...",
+        "processing_unknown_error": "⚠️ Errore sconosciuto.",
+        "processing_article": "⏳ Leggo l'articolo...",
+        "channel_add_pick_category": (
+            "📡 Canale: {name}\n"
+            "Aggiungere al monitoraggio?\n\n"
+            "Scegli una categoria:"
+        ),
+        "qa_searching": "🔍 Cerco nella base di conoscenza...",
+        "qa_nothing": (
+            "🤷 Niente raccolto su questo argomento ancora.\n"
+            "Prova a precisare la query o inviami un link sull'argomento."
+        ),
+        "qa_failed": "⚠️ Impossibile produrre una risposta. Riprova più tardi.",
+        "qa_answer_header": "🧠 Basato su {count} fonti:",
+        "qa_sources_header": "📚 Fonti:",
+        "new_cat_invalid_slug": (
+            "⚠️ Slug non valido. Usa lettere ASCII, cifre e trattini "
+            "(max 30 caratteri)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Categoria `{slug}` creata, ma i dati del canale sono "
+            "andati persi. Riprova /add."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Categoria `{slug}` creata.\n"
+            "✅ Canale {name} aggiunto.\n\n"
+            "Recuperare gli ultimi 3 video?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Categoria `{slug}` creata, ma la voce non è più in coda."
+        ),
+        "new_cat_prompt": (
+            "✏️ Inserisci lo slug della nuova categoria "
+            "(es. `machine-learning`).\n"
+            "Opzionalmente aggiungi una descrizione dopo uno spazio:"
+        ),
+        "new_cat_btn_yes": "✅ Sì",
+        "new_cat_btn_no": "❌ No",
+        "channel_data_lost": "⚠️ Dati del canale persi, riprova.",
+        "channel_added_fetch_prompt": (
+            "✅ Canale {name} aggiunto alla categoria {category}.\n\n"
+            "Recuperare gli ultimi 3 video?"
+        ),
+        "fetch_starting": "⏳ Recupero gli ultimi video...",
+        "fetch_processed": "✅ Elaborati {done} su {total} video.",
+        "fetch_skipped": "👌 OK, i video non verranno recuperati.",
+        "error_notify_body": "⚠️ Errore durante l'elaborazione:\n{title}\n{error}",
     },
     "pt": {
         "welcome_returning": (
@@ -857,6 +1492,112 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 Sim, refazer",
         "onboarding_rerun_no": "🛑 Não, deixar como está",
         "onboarding_kept_existing": "👌 Deixei como está.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "Resumo",
+        "pending_category_label": "Categoria",
+        "pending_new_cat_marker": " 🆕 (nova!)",
+        "pending_relevance_label": "Relevância",
+        "pending_awaiting_label": "⏳ Aguardando aprovação",
+        "pending_btn_save": "✅ Salvar",
+        "pending_btn_reject": "❌ Rejeitar",
+        "pending_btn_category": "🔄 Categoria",
+        "pending_btn_new_category": "➕ Nova categoria",
+        "pending_saved_suffix": "\n\n✅ Salvo: {path}",
+        "pending_rejected_suffix": "\n\n❌ Rejeitado",
+        "pending_record_gone": "⚠️ Entrada não está mais na fila.",
+        "pending_save_failed": "⚠️ Falha ao salvar entrada.",
+        "list_empty": "📡 Nenhum canal monitorado.",
+        "list_header": "📡 Canais monitorados:\n",
+        "add_usage": "Uso: /add <youtube_url> [category]",
+        "add_resolving": "⏳ Resolvendo canal...",
+        "add_resolve_failed": "⚠️ Não consegui identificar o canal pelo link.",
+        "add_already_tracked": "O canal {name} já está sendo monitorado.",
+        "add_added_to_category": "✅ Canal {name} adicionado à categoria {category}.",
+        "add_pick_category": "📡 Canal: {name}\nEscolha uma categoria:",
+        "remove_usage": "Uso: /remove <channel_name>",
+        "remove_disabled": "⏸ Canal {name} desativado.",
+        "remove_not_found": "Canal '{name}' não encontrado.",
+        "categories_empty": "📂 Nenhuma entrada ainda.",
+        "categories_header": "📂 Categorias:\n",
+        "categories_stale_marker": " (inativa)",
+        "categories_entry_count": "{count} entradas",
+        "categories_item_line": "    ⭐ média {avg}   📅 última: {last}",
+        "search_usage": "Uso: /search <consulta>",
+        "search_nothing": "🔍 Nada encontrado para \"{query}\".",
+        "search_found_header": "🔍 Encontrados {count} resultados para \"{query}\":\n",
+        "recent_empty": "📋 Nenhuma entrada ainda.",
+        "recent_header": "📋 Últimas {count} entradas:\n",
+        "status_body": (
+            "📁 Entradas: {total}\n"
+            "📺 Vídeos: {videos}\n"
+            "📰 Artigos: {articles}\n"
+            "📡 Canais: {active}/{all}\n"
+            "📊 Relevância média: {avg}/10\n"
+            "📅 Esta semana: {this_week}\n"
+        ),
+        "run_starting": "🔄 Executando verificação de canais...",
+        "run_processed": "✅ Processados {count} vídeos novos.",
+        "run_nothing": "✅ Nenhum vídeo novo encontrado.",
+        "pending_queue_empty": "📭 Fila de aprovação vazia.",
+        "pending_queue_header": "⏳ Na fila: {count} (mostrando as últimas 10)",
+        "reject_reason_low_relevance": "relevância baixa",
+        "reject_reason_manual": "manual",
+        "rejected_empty": (
+            "📭 Registro de rejeitados vazio.\n"
+            "Nada foi auto-rejeitado — ou o limiar de relevância está "
+            "suave o bastante, ou ainda não chegaram vídeos novos."
+        ),
+        "rejected_header": "❌ Últimos {count} rejeitados:\n",
+        "processing_video": "⏳ Processando vídeo...",
+        "processing_unknown_error": "⚠️ Erro desconhecido.",
+        "processing_article": "⏳ Lendo artigo...",
+        "channel_add_pick_category": (
+            "📡 Canal: {name}\n"
+            "Adicionar ao monitoramento?\n\n"
+            "Escolha uma categoria:"
+        ),
+        "qa_searching": "🔍 Buscando na base de conhecimento...",
+        "qa_nothing": (
+            "🤷 Nada coletado sobre este tópico ainda.\n"
+            "Tente refinar a consulta ou me envie um link sobre o tema."
+        ),
+        "qa_failed": "⚠️ Falha ao gerar resposta. Tente depois.",
+        "qa_answer_header": "🧠 Baseado em {count} fontes:",
+        "qa_sources_header": "📚 Fontes:",
+        "new_cat_invalid_slug": (
+            "⚠️ Slug inválido. Use letras ASCII, dígitos e hífens "
+            "(máx 30 caracteres)."
+        ),
+        "new_cat_created_lost": (
+            "✅ Categoria `{slug}` criada, mas os dados do canal foram "
+            "perdidos. Tente /add novamente."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ Categoria `{slug}` criada.\n"
+            "✅ Canal {name} adicionado.\n\n"
+            "Buscar os últimos 3 vídeos?"
+        ),
+        "new_cat_created_no_record": (
+            "✅ Categoria `{slug}` criada, mas a entrada não está mais "
+            "na fila."
+        ),
+        "new_cat_prompt": (
+            "✏️ Digite o slug da nova categoria "
+            "(ex. `machine-learning`).\n"
+            "Opcionalmente adicione uma descrição após um espaço:"
+        ),
+        "new_cat_btn_yes": "✅ Sim",
+        "new_cat_btn_no": "❌ Não",
+        "channel_data_lost": "⚠️ Dados do canal perdidos, tente novamente.",
+        "channel_added_fetch_prompt": (
+            "✅ Canal {name} adicionado à categoria {category}.\n\n"
+            "Buscar os últimos 3 vídeos?"
+        ),
+        "fetch_starting": "⏳ Buscando últimos vídeos...",
+        "fetch_processed": "✅ Processados {done} de {total} vídeos.",
+        "fetch_skipped": "👌 OK, vídeos não serão buscados.",
+        "error_notify_body": "⚠️ Erro ao processar:\n{title}\n{error}",
     },
     "zh": {
         "welcome_returning": (
@@ -955,6 +1696,108 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 是，重新设置",
         "onboarding_rerun_no": "🛑 不，保持原样",
         "onboarding_kept_existing": "👌 保持原样。",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "摘要",
+        "pending_category_label": "分类",
+        "pending_new_cat_marker": " 🆕 (新!)",
+        "pending_relevance_label": "相关性",
+        "pending_awaiting_label": "⏳ 等待确认",
+        "pending_btn_save": "✅ 保存",
+        "pending_btn_reject": "❌ 拒绝",
+        "pending_btn_category": "🔄 分类",
+        "pending_btn_new_category": "➕ 新分类",
+        "pending_saved_suffix": "\n\n✅ 已保存：{path}",
+        "pending_rejected_suffix": "\n\n❌ 已拒绝",
+        "pending_record_gone": "⚠️ 条目已不在队列中。",
+        "pending_save_failed": "⚠️ 保存失败。",
+        "list_empty": "📡 没有监控的频道。",
+        "list_header": "📡 监控的频道：\n",
+        "add_usage": "用法：/add <youtube_url> [category]",
+        "add_resolving": "⏳ 正在解析频道...",
+        "add_resolve_failed": "⚠️ 无法从该链接解析频道。",
+        "add_already_tracked": "频道 {name} 已在监控中。",
+        "add_added_to_category": "✅ 频道 {name} 已添加到分类 {category}。",
+        "add_pick_category": "📡 频道：{name}\n选择一个分类：",
+        "remove_usage": "用法：/remove <channel_name>",
+        "remove_disabled": "⏸ 频道 {name} 已禁用。",
+        "remove_not_found": "未找到频道 '{name}'。",
+        "categories_empty": "📂 还没有条目。",
+        "categories_header": "📂 分类：\n",
+        "categories_stale_marker": " (长时间未更新)",
+        "categories_entry_count": "{count} 条",
+        "categories_item_line": "    ⭐ 均值 {avg}   📅 最新：{last}",
+        "search_usage": "用法：/search <查询>",
+        "search_nothing": "🔍 没有找到关于 \"{query}\" 的内容。",
+        "search_found_header": "🔍 找到 {count} 条关于 \"{query}\" 的结果：\n",
+        "recent_empty": "📋 还没有条目。",
+        "recent_header": "📋 最近 {count} 条：\n",
+        "status_body": (
+            "📁 条目：{total}\n"
+            "📺 视频：{videos}\n"
+            "📰 文章：{articles}\n"
+            "📡 频道：{active}/{all}\n"
+            "📊 平均相关性：{avg}/10\n"
+            "📅 本周：{this_week}\n"
+        ),
+        "run_starting": "🔄 开始检查频道...",
+        "run_processed": "✅ 已处理 {count} 个新视频。",
+        "run_nothing": "✅ 未找到新视频。",
+        "pending_queue_empty": "📭 审批队列为空。",
+        "pending_queue_header": "⏳ 队列中：{count}（显示最近 10 条）",
+        "reject_reason_low_relevance": "相关性低",
+        "reject_reason_manual": "手动",
+        "rejected_empty": (
+            "📭 拒绝日志为空。\n"
+            "没有自动拒绝任何内容 — 要么相关性阈值足够宽松，要么还没有新视频到来。"
+        ),
+        "rejected_header": "❌ 最近 {count} 条被拒绝：\n",
+        "processing_video": "⏳ 正在处理视频...",
+        "processing_unknown_error": "⚠️ 发生未知错误。",
+        "processing_article": "⏳ 正在阅读文章...",
+        "channel_add_pick_category": (
+            "📡 频道：{name}\n"
+            "添加到监控？\n\n"
+            "选择一个分类："
+        ),
+        "qa_searching": "🔍 正在搜索知识库...",
+        "qa_nothing": (
+            "🤷 该主题还没有收集任何内容。\n"
+            "试着细化查询，或者把相关链接发给我。"
+        ),
+        "qa_failed": "⚠️ 无法生成回答。请稍后再试。",
+        "qa_answer_header": "🧠 基于 {count} 个来源：",
+        "qa_sources_header": "📚 来源：",
+        "new_cat_invalid_slug": (
+            "⚠️ 无效的 slug。请使用 ASCII 字母、数字和连字符"
+            "（最多 30 字符）。"
+        ),
+        "new_cat_created_lost": (
+            "✅ 分类 `{slug}` 已创建，但频道数据丢失。请重新 /add。"
+        ),
+        "new_cat_created_channel_added": (
+            "✅ 分类 `{slug}` 已创建。\n"
+            "✅ 频道 {name} 已添加。\n\n"
+            "获取最近 3 个视频？"
+        ),
+        "new_cat_created_no_record": (
+            "✅ 分类 `{slug}` 已创建，但条目已不在队列中。"
+        ),
+        "new_cat_prompt": (
+            "✏️ 输入新分类的 slug（例如：`machine-learning`）。\n"
+            "可选：在空格后加上描述："
+        ),
+        "new_cat_btn_yes": "✅ 是",
+        "new_cat_btn_no": "❌ 否",
+        "channel_data_lost": "⚠️ 频道数据丢失，请重试。",
+        "channel_added_fetch_prompt": (
+            "✅ 频道 {name} 已添加到分类 {category}。\n\n"
+            "获取最近 3 个视频？"
+        ),
+        "fetch_starting": "⏳ 正在获取最新视频...",
+        "fetch_processed": "✅ 已处理 {done}/{total} 个视频。",
+        "fetch_skipped": "👌 好，视频不会获取。",
+        "error_notify_body": "⚠️ 处理时出错：\n{title}\n{error}",
     },
     "ja": {
         "welcome_returning": (
@@ -1058,6 +1901,111 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 はい、やり直す",
         "onboarding_rerun_no": "🛑 いいえ、このまま",
         "onboarding_kept_existing": "👌 そのままにしました。",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "要約",
+        "pending_category_label": "カテゴリ",
+        "pending_new_cat_marker": " 🆕 (新規!)",
+        "pending_relevance_label": "関連性",
+        "pending_awaiting_label": "⏳ 承認待ち",
+        "pending_btn_save": "✅ 保存",
+        "pending_btn_reject": "❌ 却下",
+        "pending_btn_category": "🔄 カテゴリ",
+        "pending_btn_new_category": "➕ 新規カテゴリ",
+        "pending_saved_suffix": "\n\n✅ 保存しました：{path}",
+        "pending_rejected_suffix": "\n\n❌ 却下しました",
+        "pending_record_gone": "⚠️ エントリはもうキューにありません。",
+        "pending_save_failed": "⚠️ エントリの保存に失敗しました。",
+        "list_empty": "📡 監視中のチャンネルはありません。",
+        "list_header": "📡 監視中のチャンネル：\n",
+        "add_usage": "使用法：/add <youtube_url> [category]",
+        "add_resolving": "⏳ チャンネルを解決中...",
+        "add_resolve_failed": "⚠️ リンクからチャンネルを特定できませんでした。",
+        "add_already_tracked": "チャンネル {name} はすでに追跡中です。",
+        "add_added_to_category": "✅ チャンネル {name} をカテゴリ {category} に追加しました。",
+        "add_pick_category": "📡 チャンネル：{name}\nカテゴリを選択：",
+        "remove_usage": "使用法：/remove <channel_name>",
+        "remove_disabled": "⏸ チャンネル {name} を無効化しました。",
+        "remove_not_found": "チャンネル '{name}' が見つかりません。",
+        "categories_empty": "📂 まだエントリがありません。",
+        "categories_header": "📂 カテゴリ：\n",
+        "categories_stale_marker": " (停滞中)",
+        "categories_entry_count": "{count} 件",
+        "categories_item_line": "    ⭐ 平均 {avg}   📅 最新：{last}",
+        "search_usage": "使用法：/search <クエリ>",
+        "search_nothing": "🔍 \"{query}\" に関する情報は見つかりませんでした。",
+        "search_found_header": "🔍 \"{query}\" に関する {count} 件の結果：\n",
+        "recent_empty": "📋 まだエントリがありません。",
+        "recent_header": "📋 最新 {count} 件：\n",
+        "status_body": (
+            "📁 エントリ：{total}\n"
+            "📺 動画：{videos}\n"
+            "📰 記事：{articles}\n"
+            "📡 チャンネル：{active}/{all}\n"
+            "📊 平均関連性：{avg}/10\n"
+            "📅 今週：{this_week}\n"
+        ),
+        "run_starting": "🔄 チャンネルチェックを実行中...",
+        "run_processed": "✅ {count} 件の新しい動画を処理しました。",
+        "run_nothing": "✅ 新しい動画はありませんでした。",
+        "pending_queue_empty": "📭 承認キューは空です。",
+        "pending_queue_header": "⏳ キュー内：{count}（最新 10 件を表示）",
+        "reject_reason_low_relevance": "関連性が低い",
+        "reject_reason_manual": "手動",
+        "rejected_empty": (
+            "📭 却下ログは空です。\n"
+            "自動却下されたものはありません — 関連性しきい値が十分に緩いか、"
+            "まだ新しい動画が来ていないかです。"
+        ),
+        "rejected_header": "❌ 最新 {count} 件の却下：\n",
+        "processing_video": "⏳ 動画を処理中...",
+        "processing_unknown_error": "⚠️ 不明なエラーが発生しました。",
+        "processing_article": "⏳ 記事を読んでいます...",
+        "channel_add_pick_category": (
+            "📡 チャンネル：{name}\n"
+            "監視に追加しますか？\n\n"
+            "カテゴリを選択："
+        ),
+        "qa_searching": "🔍 ナレッジベースを検索中...",
+        "qa_nothing": (
+            "🤷 このトピックについてはまだ何も集まっていません。\n"
+            "クエリを絞り込むか、関連するリンクを送ってください。"
+        ),
+        "qa_failed": "⚠️ 回答の生成に失敗しました。後でもう一度試してください。",
+        "qa_answer_header": "🧠 {count} 件のソースに基づく：",
+        "qa_sources_header": "📚 ソース：",
+        "new_cat_invalid_slug": (
+            "⚠️ 無効な slug です。ASCII 文字、数字、ハイフンを使用してください"
+            "（最大 30 文字）。"
+        ),
+        "new_cat_created_lost": (
+            "✅ カテゴリ `{slug}` を作成しましたが、チャンネルデータが失われました。"
+            "/add をもう一度お試しください。"
+        ),
+        "new_cat_created_channel_added": (
+            "✅ カテゴリ `{slug}` を作成しました。\n"
+            "✅ チャンネル {name} を追加しました。\n\n"
+            "最新の 3 本の動画を取得しますか？"
+        ),
+        "new_cat_created_no_record": (
+            "✅ カテゴリ `{slug}` を作成しましたが、エントリはもうキューにありません。"
+        ),
+        "new_cat_prompt": (
+            "✏️ 新しいカテゴリの slug を入力してください"
+            "（例：`machine-learning`）。\n"
+            "スペースのあとに説明を追加できます："
+        ),
+        "new_cat_btn_yes": "✅ はい",
+        "new_cat_btn_no": "❌ いいえ",
+        "channel_data_lost": "⚠️ チャンネルデータが失われました。もう一度お試しください。",
+        "channel_added_fetch_prompt": (
+            "✅ チャンネル {name} をカテゴリ {category} に追加しました。\n\n"
+            "最新の 3 本の動画を取得しますか？"
+        ),
+        "fetch_starting": "⏳ 最新の動画を取得中...",
+        "fetch_processed": "✅ {done}/{total} 本の動画を処理しました。",
+        "fetch_skipped": "👌 OK、動画は取得しません。",
+        "error_notify_body": "⚠️ 処理中にエラー：\n{title}\n{error}",
     },
     "ar": {
         "welcome_returning": (
@@ -1161,6 +2109,111 @@ STRINGS: dict[str, dict[str, str]] = {
         "onboarding_rerun_yes": "🔁 نعم، أعد",
         "onboarding_rerun_no": "🛑 لا، اتركه",
         "onboarding_kept_existing": "👌 تركته كما هو.",
+
+        # ── Phase 7.3a ──
+        "pending_summary_label": "ملخص",
+        "pending_category_label": "الفئة",
+        "pending_new_cat_marker": " 🆕 (جديدة!)",
+        "pending_relevance_label": "الأهمية",
+        "pending_awaiting_label": "⏳ في انتظار الموافقة",
+        "pending_btn_save": "✅ حفظ",
+        "pending_btn_reject": "❌ رفض",
+        "pending_btn_category": "🔄 الفئة",
+        "pending_btn_new_category": "➕ فئة جديدة",
+        "pending_saved_suffix": "\n\n✅ تم الحفظ: {path}",
+        "pending_rejected_suffix": "\n\n❌ مرفوض",
+        "pending_record_gone": "⚠️ المدخل لم يعد في الطابور.",
+        "pending_save_failed": "⚠️ فشل حفظ المدخل.",
+        "list_empty": "📡 لا توجد قنوات مراقبة.",
+        "list_header": "📡 القنوات المراقبة:\n",
+        "add_usage": "الاستخدام: /add <youtube_url> [category]",
+        "add_resolving": "⏳ جاري تحديد القناة...",
+        "add_resolve_failed": "⚠️ تعذر تحديد القناة من الرابط.",
+        "add_already_tracked": "القناة {name} مراقبة بالفعل.",
+        "add_added_to_category": "✅ تمت إضافة القناة {name} إلى الفئة {category}.",
+        "add_pick_category": "📡 القناة: {name}\nاختر فئة:",
+        "remove_usage": "الاستخدام: /remove <channel_name>",
+        "remove_disabled": "⏸ تم تعطيل القناة {name}.",
+        "remove_not_found": "القناة '{name}' غير موجودة.",
+        "categories_empty": "📂 لا توجد مدخلات بعد.",
+        "categories_header": "📂 الفئات:\n",
+        "categories_stale_marker": " (راكدة)",
+        "categories_entry_count": "{count} مدخل",
+        "categories_item_line": "    ⭐ متوسط {avg}   📅 الأخير: {last}",
+        "search_usage": "الاستخدام: /search <استعلام>",
+        "search_nothing": "🔍 لم يُعثر على شيء لـ \"{query}\".",
+        "search_found_header": "🔍 {count} نتيجة لـ \"{query}\":\n",
+        "recent_empty": "📋 لا توجد مدخلات بعد.",
+        "recent_header": "📋 آخر {count} مدخل:\n",
+        "status_body": (
+            "📁 المدخلات: {total}\n"
+            "📺 الفيديوهات: {videos}\n"
+            "📰 المقالات: {articles}\n"
+            "📡 القنوات: {active}/{all}\n"
+            "📊 متوسط الأهمية: {avg}/10\n"
+            "📅 هذا الأسبوع: {this_week}\n"
+        ),
+        "run_starting": "🔄 أبدأ فحص القنوات...",
+        "run_processed": "✅ تمت معالجة {count} فيديو جديد.",
+        "run_nothing": "✅ لم يُعثر على فيديوهات جديدة.",
+        "pending_queue_empty": "📭 طابور الموافقة فارغ.",
+        "pending_queue_header": "⏳ في الطابور: {count} (عرض آخر 10)",
+        "reject_reason_low_relevance": "أهمية منخفضة",
+        "reject_reason_manual": "يدوي",
+        "rejected_empty": (
+            "📭 سجل المرفوضات فارغ.\n"
+            "لم يُرفض شيء تلقائياً — إما أن عتبة الأهمية ناعمة بما يكفي، "
+            "أو لم تصل فيديوهات جديدة بعد."
+        ),
+        "rejected_header": "❌ آخر {count} مرفوض:\n",
+        "processing_video": "⏳ جاري معالجة الفيديو...",
+        "processing_unknown_error": "⚠️ حدث خطأ غير معروف.",
+        "processing_article": "⏳ جاري قراءة المقال...",
+        "channel_add_pick_category": (
+            "📡 القناة: {name}\n"
+            "إضافة إلى المراقبة؟\n\n"
+            "اختر فئة:"
+        ),
+        "qa_searching": "🔍 البحث في قاعدة المعرفة...",
+        "qa_nothing": (
+            "🤷 لم يُجمع شيء عن هذا الموضوع بعد.\n"
+            "جرب تنقيح الاستعلام أو أرسل لي رابطاً حول الموضوع."
+        ),
+        "qa_failed": "⚠️ تعذر توليد إجابة. حاول لاحقاً.",
+        "qa_answer_header": "🧠 بناءً على {count} مصادر:",
+        "qa_sources_header": "📚 المصادر:",
+        "new_cat_invalid_slug": (
+            "⚠️ slug غير صالح. استخدم أحرف ASCII والأرقام والشرطات "
+            "(بحد أقصى 30 حرفاً)."
+        ),
+        "new_cat_created_lost": (
+            "✅ تم إنشاء الفئة `{slug}`، لكن فُقدت بيانات القناة. "
+            "جرب /add مرة أخرى."
+        ),
+        "new_cat_created_channel_added": (
+            "✅ تم إنشاء الفئة `{slug}`.\n"
+            "✅ تمت إضافة القناة {name}.\n\n"
+            "جلب آخر 3 فيديوهات؟"
+        ),
+        "new_cat_created_no_record": (
+            "✅ تم إنشاء الفئة `{slug}`، لكن المدخل لم يعد في الطابور."
+        ),
+        "new_cat_prompt": (
+            "✏️ أدخل slug الفئة الجديدة "
+            "(مثل: `machine-learning`).\n"
+            "اختيارياً: أضف وصفاً بعد مسافة:"
+        ),
+        "new_cat_btn_yes": "✅ نعم",
+        "new_cat_btn_no": "❌ لا",
+        "channel_data_lost": "⚠️ فُقدت بيانات القناة، حاول مرة أخرى.",
+        "channel_added_fetch_prompt": (
+            "✅ تمت إضافة القناة {name} إلى الفئة {category}.\n\n"
+            "جلب آخر 3 فيديوهات؟"
+        ),
+        "fetch_starting": "⏳ جاري جلب أحدث الفيديوهات...",
+        "fetch_processed": "✅ تمت معالجة {done} من {total} فيديو.",
+        "fetch_skipped": "👌 حسناً، لن يتم جلب الفيديوهات.",
+        "error_notify_body": "⚠️ خطأ أثناء المعالجة:\n{title}\n{error}",
     },
 }
 

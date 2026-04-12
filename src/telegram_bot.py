@@ -83,9 +83,9 @@ def _render_pending_message(entry: dict[str, Any]) -> str:
     """Format a pending registry entry as a Telegram message body.
 
     Format-agnostic — branches only on source_type to pick the header emoji
-    and the source line. Adding new content types means adding to
-    _SOURCE_ICONS and (optionally) the source-line block below.
+    and the source line. Rendered in the current profile language.
     """
+    lang = get_language()
     icon = _SOURCE_ICONS.get(entry.get("source_type", ""), "📄")
     title = entry.get("title", "?")
     date = entry.get("date_str") or "?"
@@ -96,38 +96,46 @@ def _render_pending_message(entry: dict[str, Any]) -> str:
         source_line = f"{entry.get('sitename') or entry.get('source_name', '?')} | {date}"
 
     bullets = "\n".join(f"• {b}" for b in entry.get("summary_bullets", []))
-    topics_str = " ".join(f"#{t}" for t in entry.get("topics", []))
+    topics_str = " ".join(f"#{tp}" for tp in entry.get("topics", []))
 
-    cat_line = f"📂 Категория: {entry.get('category', '?')}"
-    if entry.get("is_new_category"):
-        cat_line += " 🆕 (новая!)"
+    cat_marker = t("pending_new_cat_marker", lang) if entry.get("is_new_category") else ""
+    cat_line = (
+        f"📂 {t('pending_category_label', lang)}: "
+        f"{entry.get('category', '?')}{cat_marker}"
+    )
 
     return (
         f"{icon} {title}\n"
         f"{source_line}\n\n"
-        f"📋 Саммари:\n{bullets}\n\n"
+        f"📋 {t('pending_summary_label', lang)}:\n{bullets}\n\n"
         f"{cat_line}\n"
         f"🏷 {topics_str}\n"
-        f"📊 Релевантность: {entry.get('relevance', '?')}/10\n"
-        f"⏳ Ожидает подтверждения"
+        f"📊 {t('pending_relevance_label', lang)}: "
+        f"{entry.get('relevance', '?')}/10\n"
+        f"{t('pending_awaiting_label', lang)}"
     )
 
 
 def _pending_keyboard(pending_id: str) -> InlineKeyboardMarkup:
     """Approve / reject / change-category keyboard for a staged entry."""
+    lang = get_language()
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Сохранить", callback_data=f"psave:{pending_id}"),
-            InlineKeyboardButton("❌ Отклонить", callback_data=f"pskip:{pending_id}"),
+            InlineKeyboardButton(t("pending_btn_save", lang),
+                                 callback_data=f"psave:{pending_id}"),
+            InlineKeyboardButton(t("pending_btn_reject", lang),
+                                 callback_data=f"pskip:{pending_id}"),
         ],
         [
-            InlineKeyboardButton("🔄 Категория", callback_data=f"pcat:{pending_id}"),
+            InlineKeyboardButton(t("pending_btn_category", lang),
+                                 callback_data=f"pcat:{pending_id}"),
         ],
     ])
 
 
 def _pending_category_keyboard(pending_id: str) -> InlineKeyboardMarkup:
     """Grid of category buttons for re-categorising a pending entry."""
+    lang = get_language()
     categories = load_categories()
     buttons: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
@@ -139,7 +147,7 @@ def _pending_category_keyboard(pending_id: str) -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
     buttons.append([
-        InlineKeyboardButton("➕ Новая категория",
+        InlineKeyboardButton(t("pending_btn_new_category", lang),
                              callback_data=f"psetc:{pending_id}:__new__"),
     ])
     return InlineKeyboardMarkup(buttons)
@@ -526,12 +534,13 @@ async def _handle_wizard_text(
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     channels = load_channels()
     if not channels:
-        await update.message.reply_text("📡 Нет отслеживаемых каналов.")
+        await update.message.reply_text(t("list_empty", lang))
         return
 
-    lines = ["📡 Отслеживаемые каналы:\n"]
+    lines = [t("list_header", lang)]
     for ch in channels:
         status = "✅" if ch.get("enabled", True) else "⏸"
         lines.append(f"{status} {ch['name']} — {ch.get('category', '?')}")
@@ -542,26 +551,29 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     args = context.args or []
     if not args:
-        await update.message.reply_text("Использование: /add <youtube_url> [category]")
+        await update.message.reply_text(t("add_usage", lang))
         return
 
     url = args[0]
     category = args[1] if len(args) > 1 else None
 
-    await update.message.reply_text("⏳ Определяю канал...")
+    await update.message.reply_text(t("add_resolving", lang))
 
     channel_id, channel_name = resolve_channel_id(url)
     if not channel_id:
-        await update.message.reply_text("⚠️ Не удалось определить канал по ссылке.")
+        await update.message.reply_text(t("add_resolve_failed", lang))
         return
 
     # Check if already exists
     channels = load_channels()
     for ch in channels:
         if ch["id"] == channel_id:
-            await update.message.reply_text(f"Канал {channel_name} уже отслеживается.")
+            await update.message.reply_text(
+                t("add_already_tracked", lang, name=channel_name)
+            )
             return
 
     if category:
@@ -574,7 +586,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         })
         save_channels(channels)
         await update.message.reply_text(
-            f"✅ Канал {channel_name} добавлен в категорию {category}."
+            t("add_added_to_category", lang, name=channel_name, category=category)
         )
     else:
         # Ask for category via inline keyboard
@@ -584,8 +596,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         }
         keyboard = _category_keyboard("add_channel")
         await update.message.reply_text(
-            f"📡 Канал: {channel_name}\n"
-            "Выбери категорию:",
+            t("add_pick_category", lang, name=channel_name),
             reply_markup=keyboard,
         )
 
@@ -593,9 +604,10 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     args = context.args or []
     if not args:
-        await update.message.reply_text("Использование: /remove <channel_name>")
+        await update.message.reply_text(t("remove_usage", lang))
         return
 
     name_query = " ".join(args).lower()
@@ -606,24 +618,29 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             ch["enabled"] = False
             found = True
             save_channels(channels)
-            await update.message.reply_text(f"⏸ Канал {ch['name']} отключён.")
+            await update.message.reply_text(
+                t("remove_disabled", lang, name=ch["name"])
+            )
             break
 
     if not found:
-        await update.message.reply_text(f"Канал '{name_query}' не найден.")
+        await update.message.reply_text(
+            t("remove_not_found", lang, name=name_query)
+        )
 
 
 async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     stats = get_stats()
     health = stats.get("category_health", {})
 
     if not health:
-        await update.message.reply_text("📂 Пока нет записей.")
+        await update.message.reply_text(t("categories_empty", lang))
         return
 
-    lines = ["📂 Категории:\n"]
+    lines = [t("categories_header", lang)]
     # Sort by entry count (desc) — matches stats["by_category"] ordering
     for cat in stats["by_category"]:
         info = health.get(cat, {})
@@ -633,10 +650,11 @@ async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         stale = info.get("stale", False)
 
         marker = "⚠" if stale else "✅"
-        suffix = " (давно тихо)" if stale else ""
+        suffix = t("categories_stale_marker", lang) if stale else ""
+        count_str = t("categories_entry_count", lang, count=count)
         lines.append(
-            f"{marker} {cat} ({count} записей){suffix}\n"
-            f"    ⭐ avg {avg}   📅 последняя: {last_entry}"
+            f"{marker} {cat} ({count_str}){suffix}\n"
+            + t("categories_item_line", lang, avg=avg, last=last_entry)
         )
 
     await update.message.reply_text("\n".join(lines))
@@ -645,19 +663,20 @@ async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     args = context.args or []
     if not args:
-        await update.message.reply_text("Использование: /search <запрос>")
+        await update.message.reply_text(t("search_usage", lang))
         return
 
     query = " ".join(args)
     results = search_knowledge(query)
 
     if not results:
-        await update.message.reply_text(f'🔍 По запросу "{query}" ничего не найдено.')
+        await update.message.reply_text(t("search_nothing", lang, query=query))
         return
 
-    lines = [f'🔍 Найдено {len(results)} результатов по "{query}":\n']
+    lines = [t("search_found_header", lang, count=len(results), query=query)]
     for i, r in enumerate(results[:5], 1):
         type_icon = "📺" if r.get("type") == "youtube_video" else "📰"
         lines.append(
@@ -675,15 +694,16 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     args = context.args or []
     count = int(args[0]) if args and args[0].isdigit() else 5
 
     entries = get_recent_entries(count)
     if not entries:
-        await update.message.reply_text("📋 Пока нет записей.")
+        await update.message.reply_text(t("recent_empty", lang))
         return
 
-    lines = [f"📋 Последние {len(entries)} записей:\n"]
+    lines = [t("recent_header", lang, count=len(entries))]
     for e in entries:
         type_icon = "📺" if e.get("type") == "youtube_video" else "📰"
         lines.append(
@@ -697,18 +717,24 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
+    lang = get_language()
     stats = get_stats()
     channels = load_channels()
     active = sum(1 for ch in channels if ch.get("enabled", True))
 
     await update.message.reply_text(
         "🤖 PulseBrain Status\n\n"
-        f"📁 Записей: {stats['total']}\n"
-        f"📺 Видео: {stats['videos']}\n"
-        f"📰 Статей: {stats['articles']}\n"
-        f"📡 Каналов: {active}/{len(channels)}\n"
-        f"📊 Средняя релевантность: {stats['avg_relevance']}/10\n"
-        f"📅 За эту неделю: {stats['this_week']}\n"
+        + t(
+            "status_body",
+            lang,
+            total=stats["total"],
+            videos=stats["videos"],
+            articles=stats["articles"],
+            active=active,
+            all=len(channels),
+            avg=stats["avg_relevance"],
+            this_week=stats["this_week"],
+        )
     )
 
 
@@ -743,28 +769,30 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Force a pipeline run for all enabled channels."""
     if not _authorized(update):
         return
-    await update.message.reply_text("🔄 Запускаю проверку каналов...")
+    lang = get_language()
+    await update.message.reply_text(t("run_starting", lang))
 
     from src.scheduler import run_channel_check
 
     results = await run_channel_check(app=context.application)
     if results:
-        await update.message.reply_text(f"✅ Обработано {results} новых видео.")
+        await update.message.reply_text(t("run_processed", lang, count=results))
     else:
-        await update.message.reply_text("✅ Новых видео не найдено.")
+        await update.message.reply_text(t("run_nothing", lang))
 
 
 async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List currently-staged entries awaiting approval (newest 10)."""
     if not _authorized(update):
         return
+    lang = get_language()
     entries = list_pending()
     if not entries:
-        await update.message.reply_text("📭 Очередь на подтверждение пуста.")
+        await update.message.reply_text(t("pending_queue_empty", lang))
         return
 
     await update.message.reply_text(
-        f"⏳ В очереди: {len(entries)} (показываю последние 10)"
+        t("pending_queue_header", lang, count=len(entries))
     )
     for entry in entries[:10]:
         await update.message.reply_text(
@@ -773,11 +801,11 @@ async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 
-# ── Reason → Russian label map for /rejected ────────────────────────────────
+# ── Reject-reason catalog keys for /rejected ────────────────────────────────
 
-_REJECT_REASON_LABELS: dict[str, str] = {
-    "low_relevance": "низкая релевантность",
-    "manual": "вручную",
+_REJECT_REASON_KEYS: dict[str, str] = {
+    "low_relevance": "reject_reason_low_relevance",
+    "manual": "reject_reason_manual",
 }
 
 
@@ -790,6 +818,7 @@ async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     if not _authorized(update):
         return
+    lang = get_language()
     args = context.args or []
     try:
         limit = int(args[0]) if args else 10
@@ -799,24 +828,22 @@ async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     records = read_rejected_log(limit)
     if not records:
-        await update.message.reply_text(
-            "📭 Лог отклонённых пуст.\n"
-            "Ничего не было авто-отклонено — либо порог релевантности "
-            "достаточно мягкий, либо новых видео пока не было."
-        )
+        await update.message.reply_text(t("rejected_empty", lang))
         return
 
-    lines = [f"❌ Последние {len(records)} отклонённых:\n"]
+    lines = [t("rejected_header", lang, count=len(records))]
+    rel_label = t("pending_relevance_label", lang).lower()
     for rec in records:
         icon = _SOURCE_ICONS.get(rec.get("source_type", ""), "📄")
         title = rec.get("title", "?")
         source = rec.get("source_name", "?")
         score = rec.get("relevance", "?")
         reason_key = rec.get("reason", "manual")
-        reason = _REJECT_REASON_LABELS.get(reason_key, reason_key)
+        reason_catalog_key = _REJECT_REASON_KEYS.get(reason_key)
+        reason = t(reason_catalog_key, lang) if reason_catalog_key else reason_key
         lines.append(
             f"{icon} {title}\n"
-            f"    рел {score}/10 · {source} · {reason}"
+            f"    {rel_label} {score}/10 · {source} · {reason}"
         )
 
     await update.message.reply_text(_truncate_message("\n".join(lines)))
@@ -865,11 +892,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def _handle_youtube_video(
     update: Update, context: ContextTypes.DEFAULT_TYPE, url: str
 ) -> None:
-    msg = await update.message.reply_text("⏳ Обрабатываю видео...")
+    lang = get_language()
+    msg = await update.message.reply_text(t("processing_video", lang))
 
     result = await asyncio.to_thread(process_youtube_video, url)
     if not result:
-        await msg.edit_text("⚠️ Произошла неизвестная ошибка.")
+        await msg.edit_text(t("processing_unknown_error", lang))
         return
 
     if "error" in result:
@@ -879,7 +907,7 @@ async def _handle_youtube_video(
     pending_id = result["pending_id"]
     entry = get_pending(pending_id)
     if entry is None:
-        await msg.edit_text("⚠️ Запись не найдена в очереди.")
+        await msg.edit_text(t("pending_record_gone", lang))
         return
 
     await msg.edit_text(
@@ -891,18 +919,19 @@ async def _handle_youtube_video(
 async def _handle_youtube_channel(
     update: Update, context: ContextTypes.DEFAULT_TYPE, url: str
 ) -> None:
-    msg = await update.message.reply_text("⏳ Определяю канал...")
+    lang = get_language()
+    msg = await update.message.reply_text(t("add_resolving", lang))
 
     channel_id, channel_name = resolve_channel_id(url)
     if not channel_id:
-        await msg.edit_text("⚠️ Не удалось определить канал по ссылке.")
+        await msg.edit_text(t("add_resolve_failed", lang))
         return
 
     # Check if already monitored
     channels = load_channels()
     for ch in channels:
         if ch["id"] == channel_id:
-            await msg.edit_text(f"📡 Канал {channel_name} уже отслеживается.")
+            await msg.edit_text(t("add_already_tracked", lang, name=channel_name))
             return
 
     context.user_data["pending_channel"] = {
@@ -912,9 +941,7 @@ async def _handle_youtube_channel(
 
     keyboard = _category_keyboard("add_channel")
     await msg.edit_text(
-        f"📡 Канал: {channel_name}\n"
-        "Добавить в мониторинг?\n\n"
-        "Выбери категорию:",
+        t("channel_add_pick_category", lang, name=channel_name),
         reply_markup=keyboard,
     )
 
@@ -922,11 +949,12 @@ async def _handle_youtube_channel(
 async def _handle_web_article(
     update: Update, context: ContextTypes.DEFAULT_TYPE, url: str
 ) -> None:
-    msg = await update.message.reply_text("⏳ Читаю статью...")
+    lang = get_language()
+    msg = await update.message.reply_text(t("processing_article", lang))
 
     result = await asyncio.to_thread(process_web_article, url)
     if not result:
-        await msg.edit_text("⚠️ Произошла неизвестная ошибка.")
+        await msg.edit_text(t("processing_unknown_error", lang))
         return
 
     if "error" in result:
@@ -936,7 +964,7 @@ async def _handle_web_article(
     pending_id = result["pending_id"]
     entry = get_pending(pending_id)
     if entry is None:
-        await msg.edit_text("⚠️ Запись не найдена в очереди.")
+        await msg.edit_text(t("pending_record_gone", lang))
         return
 
     await msg.edit_text(
@@ -951,21 +979,19 @@ async def _handle_question(
     update: Update, context: ContextTypes.DEFAULT_TYPE, question: str
 ) -> None:
     """Answer a free-form question using the knowledge base."""
-    msg = await update.message.reply_text("🔍 Ищу в базе знаний...")
+    lang = get_language()
+    msg = await update.message.reply_text(t("qa_searching", lang))
 
     sources = search_for_question(question, max_files=5)
 
     if not sources:
-        await msg.edit_text(
-            "🤷 По этой теме пока ничего не собрано.\n"
-            "Попробуй уточнить запрос или скинь мне ссылку на материал по этой теме."
-        )
+        await msg.edit_text(t("qa_nothing", lang))
         return
 
     answer = answer_question(question, sources)
 
     if not answer:
-        await msg.edit_text("⚠️ Не удалось сформировать ответ. Попробуй позже.")
+        await msg.edit_text(t("qa_failed", lang))
         return
 
     # Build sources footer
@@ -977,13 +1003,13 @@ async def _handle_question(
         date = src.get("date", "?")
         source_lines.append(f"{i}. {type_icon} {title} — {source_name}, {date}")
 
-    text = (
-        f"🧠 На основе {len(sources)} источников:\n\n"
+    text_body = (
+        f"{t('qa_answer_header', lang, count=len(sources))}\n\n"
         f"{answer}\n\n"
-        f"📚 Источники:\n" + "\n".join(source_lines)
+        f"{t('qa_sources_header', lang)}\n" + "\n".join(source_lines)
     )
 
-    await msg.edit_text(_truncate_message(text))
+    await msg.edit_text(_truncate_message(text_body))
 
 
 # ── New category input handler ───────────────────────────────────────────────
@@ -992,6 +1018,7 @@ async def _handle_new_category_input(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, action: str
 ) -> None:
     """Process user input for a new category slug."""
+    lang = get_language()
     parts = text.split(maxsplit=1)
     slug = parts[0].lower().strip()
     description = parts[1].strip() if len(parts) > 1 else slug.replace("-", " ").title()
@@ -999,7 +1026,7 @@ async def _handle_new_category_input(
     # Validate slug
     clean_slug = re.sub(r"[^a-z0-9-]", "", slug)
     if not clean_slug or len(clean_slug) > 30:
-        await update.message.reply_text("⚠️ Некорректный slug. Используй латиницу, цифры и дефис (до 30 символов).")
+        await update.message.reply_text(t("new_cat_invalid_slug", lang))
         context.user_data["waiting_new_category"] = action
         return
 
@@ -1008,7 +1035,9 @@ async def _handle_new_category_input(
     if action == "add_channel":
         pending = context.user_data.get("pending_channel")
         if not pending:
-            await update.message.reply_text(f"✅ Категория `{clean_slug}` создана, но данные канала потеряны. Попробуй /add ещё раз.")
+            await update.message.reply_text(
+                t("new_cat_created_lost", lang, slug=clean_slug)
+            )
             return
         channels = load_channels()
         channels.append({
@@ -1020,13 +1049,22 @@ async def _handle_new_category_input(
         save_channels(channels)
         context.user_data.pop("pending_channel", None)
         await update.message.reply_text(
-            f"✅ Категория `{clean_slug}` создана.\n"
-            f"✅ Канал {pending['name']} добавлен.\n\n"
-            "Загрузить последние 3 видео?",
+            t(
+                "new_cat_created_channel_added",
+                lang,
+                slug=clean_slug,
+                name=pending["name"],
+            ),
             reply_markup=InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Да", callback_data=f"fetch_recent:{pending['id']}:{clean_slug}"),
-                    InlineKeyboardButton("❌ Нет", callback_data="fetch_skip"),
+                    InlineKeyboardButton(
+                        t("new_cat_btn_yes", lang),
+                        callback_data=f"fetch_recent:{pending['id']}:{clean_slug}",
+                    ),
+                    InlineKeyboardButton(
+                        t("new_cat_btn_no", lang),
+                        callback_data="fetch_skip",
+                    ),
                 ]
             ]),
         )
@@ -1034,7 +1072,7 @@ async def _handle_new_category_input(
         pending_id = action.split(":", 1)[1]
         if not update_pending_category(pending_id, clean_slug, is_new_category=True):
             await update.message.reply_text(
-                f"✅ Категория `{clean_slug}` создана, но запись больше не в очереди."
+                t("new_cat_created_no_record", lang, slug=clean_slug)
             )
             return
         entry = get_pending(pending_id)
@@ -1047,7 +1085,8 @@ async def _handle_new_category_input(
 # ── Inline keyboard callbacks ────────────────────────────────────────────────
 
 def _category_keyboard(prefix: str) -> InlineKeyboardMarkup:
-    """Build a grid of category buttons with a '+ Новая' option."""
+    """Build a grid of category buttons with a 'new category' option."""
+    lang = get_language()
     categories = load_categories()
     buttons = []
     row: list[InlineKeyboardButton] = []
@@ -1058,7 +1097,12 @@ def _category_keyboard(prefix: str) -> InlineKeyboardMarkup:
             row = []
     if row:
         buttons.append(row)
-    buttons.append([InlineKeyboardButton("➕ Новая категория", callback_data=f"{prefix}:__new__")])
+    buttons.append([
+        InlineKeyboardButton(
+            t("pending_btn_new_category", lang),
+            callback_data=f"{prefix}:__new__",
+        )
+    ])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -1092,23 +1136,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     # ── Pending approval flow ───────────────────────────────────────────────
+    lang = get_language()
     if data.startswith("psave:"):
         pending_id = data.split(":", 1)[1]
         entry = get_pending(pending_id)
         if entry is None:
-            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            await query.edit_message_text(t("pending_record_gone", lang))
             return
         if entry.get("is_new_category"):
             cat = entry["category"]
             add_category(cat, cat.replace("-", " ").title())
         file_path = await asyncio.to_thread(commit_pending, pending_id)
         if file_path is None:
-            await query.edit_message_text("⚠️ Не удалось сохранить запись.")
+            await query.edit_message_text(t("pending_save_failed", lang))
             return
         rel_path = os.path.relpath(str(file_path), start="/app")
         await query.edit_message_text(
             _truncate_message(
-                f"{_render_pending_message(entry)}\n\n✅ Сохранено: {rel_path}"
+                _render_pending_message(entry)
+                + t("pending_saved_suffix", lang, path=rel_path)
             ),
             reply_markup=None,
         )
@@ -1118,12 +1164,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         pending_id = data.split(":", 1)[1]
         entry = get_pending(pending_id)
         if entry is None:
-            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            await query.edit_message_text(t("pending_record_gone", lang))
             return
         reject_pending(pending_id)
         await query.edit_message_text(
             _truncate_message(
-                f"{_render_pending_message(entry)}\n\n❌ Отклонено"
+                _render_pending_message(entry)
+                + t("pending_rejected_suffix", lang)
             ),
             reply_markup=None,
         )
@@ -1132,7 +1179,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if data.startswith("pcat:"):
         pending_id = data.split(":", 1)[1]
         if get_pending(pending_id) is None:
-            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            await query.edit_message_text(t("pending_record_gone", lang))
             return
         await query.edit_message_reply_markup(
             reply_markup=_pending_category_keyboard(pending_id),
@@ -1145,14 +1192,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if slug == "__new__":
             context.user_data["waiting_new_category"] = f"pending:{pending_id}"
             await query.edit_message_reply_markup(reply_markup=None)
-            await query.message.reply_text(
-                "✏️ Введи slug новой категории (например: `machine-learning`).\n"
-                "Можно через пробел добавить описание:\n"
-                "`machine-learning Machine Learning & Deep Learning`"
-            )
+            await query.message.reply_text(t("new_cat_prompt", lang))
             return
         if not update_pending_category(pending_id, slug):
-            await query.edit_message_text("⚠️ Запись больше не в очереди.")
+            await query.edit_message_text(t("pending_record_gone", lang))
             return
         entry = get_pending(pending_id)
         await query.edit_message_text(
@@ -1165,18 +1208,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if data.startswith("add_channel:__new__"):
         context.user_data["waiting_new_category"] = "add_channel"
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(
-            "✏️ Введи slug новой категории (например: `machine-learning`).\n"
-            "Можно через пробел добавить описание:\n"
-            "`machine-learning Machine Learning & Deep Learning`"
-        )
+        await query.message.reply_text(t("new_cat_prompt", lang))
         return
 
     if data.startswith("add_channel:"):
         category = data.split(":", 1)[1]
         pending = context.user_data.get("pending_channel")
         if not pending:
-            await query.message.reply_text("⚠️ Данные канала потеряны, попробуйте ещё раз.")
+            await query.message.reply_text(t("channel_data_lost", lang))
             return
 
         channels = load_channels()
@@ -1190,12 +1229,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
-            f"✅ Канал {pending['name']} добавлен в категорию {category}.\n\n"
-            "Загрузить последние 3 видео?",
+            t(
+                "channel_added_fetch_prompt",
+                lang,
+                name=pending["name"],
+                category=category,
+            ),
             reply_markup=InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Да", callback_data=f"fetch_recent:{pending['id']}:{category}"),
-                    InlineKeyboardButton("❌ Нет", callback_data="fetch_skip"),
+                    InlineKeyboardButton(
+                        t("new_cat_btn_yes", lang),
+                        callback_data=f"fetch_recent:{pending['id']}:{category}",
+                    ),
+                    InlineKeyboardButton(
+                        t("new_cat_btn_no", lang),
+                        callback_data="fetch_skip",
+                    ),
                 ]
             ]),
         )
@@ -1207,7 +1256,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         category = parts[2]
 
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text("⏳ Загружаю последние видео...")
+        await query.message.reply_text(t("fetch_starting", lang))
 
         video_ids = await asyncio.to_thread(get_recent_video_ids, channel_id, 3)
         processed = 0
@@ -1217,11 +1266,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             if result and "error" not in result:
                 processed += 1
 
-        await query.message.reply_text(f"✅ Обработано {processed} из {len(video_ids)} видео.")
+        await query.message.reply_text(
+            t("fetch_processed", lang, done=processed, total=len(video_ids))
+        )
 
     elif data == "fetch_skip":
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text("👌 Хорошо, видео не загружены.")
+        await query.message.reply_text(t("fetch_skipped", lang))
 
 
 # ── Notification helper ──────────────────────────────────────────────────────
@@ -1250,7 +1301,7 @@ async def send_error_notification(app: Application, title: str, error: str) -> N
     """Send error notification to the configured chat."""
     await app.bot.send_message(
         chat_id=TELEGRAM_CHAT_ID,
-        text=f"⚠️ Ошибка при обработке:\n{title}\n{error}",
+        text=t("error_notify_body", get_language(), title=title, error=error),
     )
 
 

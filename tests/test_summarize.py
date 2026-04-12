@@ -356,3 +356,42 @@ def test_summarize_survives_profile_exception(sample_summary_dict):
 
     # Still produced a summary despite the profile failure
     assert result == sample_summary_dict
+
+
+def test_language_directives_cover_all_supported_langs():
+    """Phase 7.5: every SUPPORTED_LANGS code has a LANGUAGE_DIRECTIVES entry."""
+    from src.strings import SUPPORTED_LANGS
+    from src.summarize import LANGUAGE_DIRECTIVES
+
+    for code in SUPPORTED_LANGS:
+        assert code in LANGUAGE_DIRECTIVES, f"LANGUAGE_DIRECTIVES missing: {code}"
+        assert LANGUAGE_DIRECTIVES[code]  # non-empty
+
+
+@pytest.mark.parametrize("lang,expected_phrase", [
+    ("de", "Write in German"),
+    ("fr", "Write in French"),
+    ("es", "Write in Spanish"),
+    ("it", "Write in Italian"),
+    ("pt", "Write in Portuguese"),
+    ("zh", "Write in Simplified Chinese"),
+    ("ja", "Write in Japanese"),
+    ("ar", "Write in Arabic"),
+])
+def test_summarize_injects_language_directive_for_new_langs(
+    tmp_knowledge_dir, sample_summary_dict, lang, expected_phrase,
+):
+    """Phase 7.5: when profile.language is one of the new 8 langs, the
+    summarize prompt contains the matching 'Write in <Language>' directive."""
+    from src.profile import init_profile, save_profile
+    from src.summarize import summarize_content
+
+    init_profile()
+    save_profile({"language": lang, "persona": "test"})
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content("content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert expected_phrase in prompt

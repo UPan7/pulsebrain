@@ -19,14 +19,47 @@ def _client() -> openai.OpenAI:
 # Language directive injected into SUMMARIZE_PROMPT. Determines what
 # language the bullets / notes / insights / action_items are written in.
 # Read from the user profile at summarize time (src.profile.load_profile).
+# Must cover every code in src.strings.SUPPORTED_LANGS.
 LANGUAGE_DIRECTIVES: dict[str, str] = {
+    "en": (
+        "Write in English, dense but conversational, like a smart colleague "
+        "explaining what they just watched."
+    ),
+    "de": (
+        "Write in German (Deutsch), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
+    ),
+    "fr": (
+        "Write in French (français), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
+    ),
+    "es": (
+        "Write in Spanish (español), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
+    ),
+    "it": (
+        "Write in Italian (italiano), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
+    ),
+    "pt": (
+        "Write in Portuguese (português), dense but conversational, like a "
+        "smart colleague explaining what they just watched."
+    ),
+    "zh": (
+        "Write in Simplified Chinese (简体中文), dense but conversational, "
+        "like a smart colleague explaining what they just watched."
+    ),
+    "ja": (
+        "Write in Japanese (日本語), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
+    ),
     "ru": (
         "Write in Russian, dense but conversational, like a smart colleague "
         "explaining what they just watched."
     ),
-    "en": (
-        "Write in English, dense but conversational, like a smart colleague "
-        "explaining what they just watched."
+    "ar": (
+        "Write in Arabic (العربية), dense but conversational, like a smart "
+        "colleague explaining what they just watched."
     ),
 }
 

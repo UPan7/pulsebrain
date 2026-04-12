@@ -152,7 +152,11 @@ def mock_telegram_context():
 
 @pytest.fixture()
 def sample_summary_dict() -> dict[str, Any]:
-    """Canonical summarize_content() output for reuse across tests."""
+    """Canonical summarize_content() output for reuse across tests.
+
+    Note: no 'suggested_category' — category selection is handled by
+    src.categorize.categorize_content, not by the summarizer.
+    """
     return {
         "summary_bullets": ["Bullet one", "Bullet two"],
         "detailed_notes": "Detailed notes paragraph in Russian.",
@@ -160,7 +164,6 @@ def sample_summary_dict() -> dict[str, Any]:
         "action_items": ["Action one"],
         "topics": ["ai", "agents"],
         "relevance_score": 8,
-        "suggested_category": "ai-agents",
     }
 
 

@@ -132,7 +132,6 @@ def test_summarize_includes_metadata_in_prompt(sample_summary_dict):
             title="Title-X",
             source_name="Channel-Y",
             source_type="youtube_video",
-            category="ai-agents",
             date="2025-06-15",
         )
 
@@ -140,8 +139,18 @@ def test_summarize_includes_metadata_in_prompt(sample_summary_dict):
     assert "Title-X" in prompt
     assert "Channel-Y" in prompt
     assert "youtube_video" in prompt
-    assert "ai-agents" in prompt
     assert "2025-06-15" in prompt
+
+
+def test_summarize_prompt_has_no_suggested_category_example():
+    """Regression guard: the 'ai-agents' example in the JSON schema used to
+    make every video land in ai-agents because gpt-5.4-nano copied it
+    verbatim. suggested_category is now a categorize.py concern.
+    """
+    from src.summarize import SUMMARIZE_PROMPT
+
+    assert "suggested_category" not in SUMMARIZE_PROMPT
+    assert '"ai-agents"' not in SUMMARIZE_PROMPT
 
 
 def test_summarize_uses_unknown_when_date_missing(sample_summary_dict):

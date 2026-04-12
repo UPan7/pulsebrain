@@ -80,7 +80,6 @@ CONTENT METADATA:
 - Title: {title}
 - Source: {source_name}
 - Type: {source_type}
-- Category hint: {category}
 - Published: {date}
 
 OUTPUT FORMAT (valid JSON only, no markdown fences, no commentary):
@@ -90,8 +89,7 @@ OUTPUT FORMAT (valid JSON only, no markdown fences, no commentary):
   "key_insights": ["...", "..."],
   "action_items": ["...", "..."],
   "topics": ["...", "..."],
-  "relevance_score": 8,
-  "suggested_category": "ai-agents"
+  "relevance_score": 8
 }}
 
 CONTENT:
@@ -103,10 +101,15 @@ def summarize_content(
     title: str,
     source_name: str,
     source_type: str,
-    category: str = "auto-detect",
     date: str | None = None,
 ) -> dict[str, Any] | None:
-    """Send content to LLM via OpenRouter and get structured summary back."""
+    """Send content to LLM via OpenRouter and get structured summary back.
+
+    Category inference is intentionally NOT done here — see
+    src/categorize.py:categorize_content. Keeping the two LLM calls
+    separate avoids the summarize prompt copying its example value
+    verbatim (which used to force every entry into 'ai-agents').
+    """
     client = _client()
 
     # Truncate content to ~100k chars to stay within context limits
@@ -118,7 +121,6 @@ def summarize_content(
         title=title,
         source_name=source_name,
         source_type=source_type,
-        category=category,
         date=date or "unknown",
         content=content,
     )

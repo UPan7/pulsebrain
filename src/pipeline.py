@@ -72,16 +72,18 @@ def _process_content(
         title=title,
         source_name=source_name,
         source_type=source_type,
-        category=category or "auto-detect",
         date=date_str,
     )
     if not summary:
         return {"error": f"Не удалось создать саммари для: {title}"}
 
     # ── Categorize ──────────────────────────────────────────────────────────
-    is_new_category = False
-    final_category = category or summary.get("suggested_category")
-    if not final_category:
+    # User-supplied category wins; otherwise run the dynamic categorizer.
+    # We intentionally do NOT read any "suggested_category" from the summary
+    # dict — summarize_content no longer infers categories (see its docstring).
+    if category:
+        final_category, is_new_category = category, False
+    else:
         final_category, is_new_category = categorize_content(title, content)
 
     # ── Stage (awaiting user approval) ──────────────────────────────────────

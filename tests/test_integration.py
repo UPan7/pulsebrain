@@ -31,7 +31,6 @@ def _summary():
         "action_items": ["Action one"],
         "topics": ["ai-agents", "claude"],
         "relevance_score": 9,
-        "suggested_category": "ai-agents",
     }
 
 
@@ -52,6 +51,7 @@ def test_youtube_pipeline_stage_then_commit(tmp_knowledge_dir):
         }),
         patch("src.pipeline.get_transcript", return_value=transcript),
         patch("src.pipeline.summarize_content", return_value=_summary()),
+        patch("src.pipeline.categorize_content", return_value=("ai-agents", False)),
     ):
         result = process_youtube_video(
             "https://www.youtube.com/watch?v=intvid01",
@@ -130,12 +130,10 @@ def test_web_pipeline_stage_then_commit(tmp_knowledge_dir):
         "source_url": "https://blog.example.com/n8n",
         "sitename": "blog.example.com",
     }
-    summary = _summary()
-    summary["suggested_category"] = "n8n-automation"
-
     with (
         patch("src.pipeline.extract_web_article", return_value=article),
-        patch("src.pipeline.summarize_content", return_value=summary),
+        patch("src.pipeline.summarize_content", return_value=_summary()),
+        patch("src.pipeline.categorize_content", return_value=("n8n-automation", False)),
     ):
         result = process_web_article("https://blog.example.com/n8n")
 
@@ -179,6 +177,7 @@ def test_youtube_pipeline_stage_then_reject(tmp_knowledge_dir):
         }),
         patch("src.pipeline.get_transcript", return_value="some text"),
         patch("src.pipeline.summarize_content", return_value=_summary()),
+        patch("src.pipeline.categorize_content", return_value=("ai-agents", False)),
     ):
         result = process_youtube_video("https://www.youtube.com/watch?v=rejvid01")
 
@@ -219,6 +218,7 @@ def test_pipeline_dedup_across_calls_after_stage(tmp_knowledge_dir):
         }),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=_summary()),
+        patch("src.pipeline.categorize_content", return_value=("ai-agents", False)),
     ):
         first = process_youtube_video("https://www.youtube.com/watch?v=dupvid01")
         second = process_youtube_video("https://www.youtube.com/watch?v=dupvid01")

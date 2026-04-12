@@ -93,13 +93,13 @@ def test_process_youtube_accepts_upload_date():
         "action_items": ["a"],
         "topics": ["t"],
         "relevance_score": 7,
-        "suggested_category": "ai-news",
     }
 
     with (
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
         patch("src.pipeline.summarize_content", return_value=summary),
+        patch("src.pipeline.categorize_content", return_value=("ai-news", False)),
         patch("src.pipeline.stage_pending") as mock_save,
     ):
         mock_save.return_value = "abc12345"
@@ -125,7 +125,6 @@ def _summary_dict():
         "action_items": ["a"],
         "topics": ["t"],
         "relevance_score": 7,
-        "suggested_category": "ai-news",
     }
 
 
@@ -146,6 +145,7 @@ def test_process_web_article_happy_path():
     with (
         patch("src.pipeline.extract_web_article", return_value=_article_dict()),
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.categorize_content", return_value=("ai-news", False)),
         patch("src.pipeline.stage_pending") as mock_save,
     ):
         mock_save.return_value = "abc12345"
@@ -200,6 +200,7 @@ def test_process_web_article_propagates_author_and_sitename():
     with (
         patch("src.pipeline.extract_web_article", return_value=_article_dict()),
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.categorize_content", return_value=("ai-news", False)),
         patch("src.pipeline.stage_pending") as mock_save,
     ):
         mock_save.return_value = "abc12345"
@@ -218,17 +219,14 @@ def test_process_content_unknown_source_type():
     assert "podcast" in result["error"]
 
 
-def test_pipeline_uses_categorize_fallback_when_no_suggestion():
-    """Summary missing suggested_category → categorize_content is called."""
+def test_pipeline_always_calls_categorize_when_no_user_category():
+    """Without a user-supplied category, categorize_content is the only path."""
     from src.pipeline import process_youtube_video
-
-    summary = _summary_dict()
-    summary.pop("suggested_category")
 
     with (
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
-        patch("src.pipeline.summarize_content", return_value=summary),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("computed-cat", False)) as mock_cat,
     ):
@@ -238,16 +236,34 @@ def test_pipeline_uses_categorize_fallback_when_no_suggestion():
     assert result["category"] == "computed-cat"
 
 
-def test_pipeline_returns_is_new_category_flag():
+def test_pipeline_skips_categorize_when_user_specified_category():
+    """A user-supplied category bypasses the LLM categorizer entirely."""
     from src.pipeline import process_youtube_video
-
-    summary = _summary_dict()
-    summary.pop("suggested_category")
 
     with (
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value="transcript"),
-        patch("src.pipeline.summarize_content", return_value=summary),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.stage_pending", return_value="abc12345"),
+        patch("src.pipeline.categorize_content") as mock_cat,
+    ):
+        result = process_youtube_video(
+            "https://www.youtube.com/watch?v=usercat1",
+            category="wordpress",
+        )
+
+    mock_cat.assert_not_called()
+    assert result["category"] == "wordpress"
+    assert result.get("is_new_category") is not True
+
+
+def test_pipeline_returns_is_new_category_flag():
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value="transcript"),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("new-cat", True)),
     ):

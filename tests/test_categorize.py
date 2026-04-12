@@ -80,3 +80,78 @@ def test_categorize_fallback_on_api_error():
         slug, is_new = categorize_content("Title", "content")
         assert slug == "ai-news"
         assert is_new is False
+
+
+# ── Auto-merge (SequenceMatcher similarity) ─────────────────────────────────
+
+
+def test_auto_merge_returns_existing_for_near_duplicate():
+    """A one-char-off slug from the LLM should merge into the existing one."""
+    from src.categorize import _auto_merge
+
+    existing = {"ai-agents": "AI Agents", "wordpress": "WordPress"}
+    # "ai-agent" (no trailing s) is ~0.94 similarity to "ai-agents"
+    assert _auto_merge("ai-agent", existing) == "ai-agents"
+
+
+def test_auto_merge_returns_none_for_dissimilar_slug():
+    """A genuinely new topic should not be merged into anything."""
+    from src.categorize import _auto_merge
+
+    existing = {"ai-agents": "AI Agents", "wordpress": "WordPress"}
+    assert _auto_merge("robotics", existing) is None
+
+
+def test_auto_merge_picks_closest_match():
+    """When multiple existing slugs are similar, pick the closest one."""
+    from src.categorize import _auto_merge
+
+    existing = {
+        "ai-agents": "AI Agents",
+        "ai-news": "AI News",
+        "wordpress": "WP",
+    }
+    # "ai-agent" is closer to "ai-agents" than to "ai-news"
+    assert _auto_merge("ai-agent", existing) == "ai-agents"
+
+
+def test_auto_merge_empty_categories_returns_none():
+    from src.categorize import _auto_merge
+
+    assert _auto_merge("anything", {}) is None
+
+
+def test_categorize_llm_near_duplicate_is_auto_merged():
+    """End-to-end: LLM returns 'ai-agent', categorize_content returns 'ai-agents'."""
+    from src.categorize import categorize_content
+
+    client = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "ai-agent"
+    resp = MagicMock()
+    resp.choices = [choice]
+    client.chat.completions.create.return_value = resp
+
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content("AI Agents Tutorial", "some content")
+
+    assert slug == "ai-agents"   # existing default category
+    assert is_new is False       # merged, not created
+
+
+def test_categorize_llm_genuinely_new_slug_is_new():
+    """End-to-end: dissimilar slug stays as new."""
+    from src.categorize import categorize_content
+
+    client = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "robotics"
+    resp = MagicMock()
+    resp.choices = [choice]
+    client.chat.completions.create.return_value = resp
+
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content("Robot Arms Tutorial", "content")
+
+    assert slug == "robotics"
+    assert is_new is True

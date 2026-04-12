@@ -56,17 +56,60 @@ def test_unauthorized_wrong_id():
 
 
 @pytest.mark.asyncio
-async def test_cmd_start_replies():
-    """cmd_start sends reply with greeting."""
+async def test_cmd_start_replies_when_profile_exists():
+    """Returning users get the localized welcome."""
     from src.telegram_bot import cmd_start
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.profile_exists", return_value=True),
+        patch("src.telegram_bot.get_language", return_value="ru"),
+    ):
         await cmd_start(update, ctx)
-        update.message.reply_text.assert_called_once()
-        text = update.message.reply_text.call_args[0][0]
-        assert "PulseBrain" in text
+    update.message.reply_text.assert_called_once()
+    text = update.message.reply_text.call_args[0][0]
+    assert "PulseBrain" in text
+    assert "готов" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_replies_in_english_when_profile_is_en():
+    """Returning en-user gets the English welcome."""
+    from src.telegram_bot import cmd_start
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.profile_exists", return_value=True),
+        patch("src.telegram_bot.get_language", return_value="en"),
+    ):
+        await cmd_start(update, ctx)
+    text = update.message.reply_text.call_args[0][0]
+    assert "ready" in text
+    assert "готов" not in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_first_run_bilingual_when_no_profile():
+    """Fresh install with no profile → bilingual welcome (Phase 5.3 wizard
+    will replace this branch; until then we show both languages stacked)."""
+    from src.telegram_bot import cmd_start
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.profile_exists", return_value=False),
+        patch("src.telegram_bot.get_language", return_value="ru"),
+    ):
+        await cmd_start(update, ctx)
+    text = update.message.reply_text.call_args[0][0]
+    # Contains both language welcomes
+    assert "Привет" in text
+    assert "Hi" in text
 
 
 # ── URL routing in handle_message ──────────────────────────────────────────
@@ -255,12 +298,36 @@ async def test_cmd_help_replies_with_command_list():
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.get_language", return_value="ru"),
+    ):
         await cmd_help(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    for cmd in ("/add", "/remove", "/list", "/search", "/recent", "/status", "/stats", "/run"):
+    for cmd in ("/add", "/remove", "/list", "/search", "/recent", "/status",
+                "/stats", "/run", "/language", "/rejected"):
         assert cmd in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_help_in_english():
+    """When the profile language is en, /help renders the English catalog."""
+    from src.telegram_bot import cmd_help
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.get_language", return_value="en"),
+    ):
+        await cmd_help(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    # English marker phrase
+    assert "Commands" in text
+    # Core commands still present
+    assert "/language" in text
 
 
 @pytest.mark.asyncio

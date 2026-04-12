@@ -36,8 +36,10 @@ from src.pending import (
     update_pending_category,
 )
 from src.pipeline import process_web_article, process_youtube_video
+from src.profile import get_language, profile_exists
 from src.router import SourceType, detect_source_type
 from src.storage import get_recent_entries, get_stats, search_for_question, search_knowledge
+from src.strings import t
 from src.summarize import answer_question
 
 logger = logging.getLogger(__name__)
@@ -148,34 +150,24 @@ def _authorized(update: Update) -> bool:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
-    await update.message.reply_text(
-        "👋 PulseBrain запущен!\n\n"
-        "Отправь мне ссылку на YouTube видео, статью или канал — "
-        "я обработаю и сохраню в базу знаний.\n\n"
-        "Используй /help для списка команд."
-    )
+    # If the user has never been onboarded, the wizard takes over here
+    # (wired in Phase 5.3). Until then, cmd_start just shows the welcome
+    # in the profile's language.
+    lang = get_language()
+    if not profile_exists():
+        # Phase 5.3 will replace this branch with the wizard. Until then,
+        # show a bilingual welcome so a fresh install is still friendly.
+        await update.message.reply_text(
+            t("welcome_first_run", "ru") + "\n\n---\n\n" + t("welcome_first_run", "en")
+        )
+        return
+    await update.message.reply_text(t("welcome_returning", lang))
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
-    await update.message.reply_text(
-        "📖 Команды:\n\n"
-        "/add <url> [category] — Добавить YouTube канал в мониторинг\n"
-        "/remove <name> — Отключить канал\n"
-        "/list — Все отслеживаемые каналы\n"
-        "/categories — Категории с количеством записей\n"
-        "/search <запрос> — Поиск по базе знаний\n"
-        "/recent [N] — Последние N записей (по умолч. 5)\n"
-        "/pending — Записи на подтверждение\n"
-        "/rejected [N] — Последние авто-отклонённые видео\n"
-        "/status — Состояние бота\n"
-        "/run — Запустить проверку каналов\n"
-        "/stats — Подробная статистика\n"
-        "/help — Эта справка\n\n"
-        "Или просто отправь ссылку — бот определит тип и обработает!\n"
-        "Или задай вопрос текстом — бот ответит по базе знаний."
-    )
+    await update.message.reply_text(t("help_text", get_language()))
 
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

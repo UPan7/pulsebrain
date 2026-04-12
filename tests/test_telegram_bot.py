@@ -273,7 +273,8 @@ def test_truncate_with_unicode():
     [
         "cmd_start", "cmd_help", "cmd_list", "cmd_add", "cmd_remove",
         "cmd_categories", "cmd_search", "cmd_recent", "cmd_status",
-        "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected", "handle_message",
+        "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected",
+        "cmd_onboarding", "cmd_cancel", "handle_message",
     ],
 )
 async def test_unauthorized_short_circuits_every_command(handler_name):
@@ -1533,5 +1534,368 @@ def test_create_bot_application_registers_handlers():
         app = create_bot_application()
 
     assert app is fake_app
-    # 13 commands (incl. /pending, /rejected) + 1 callback + 1 message = 15 handlers
-    assert fake_app.add_handler.call_count == 15
+    # 15 commands (incl. /pending, /rejected, /onboarding, /cancel)
+    # + 1 callback + 1 message = 17 handlers
+    assert fake_app.add_handler.call_count == 17
+
+
+# ── Onboarding wizard (Phase 5.3) ────────────────────────────────────────
+
+
+def _make_callback_update(chat_id: int = 12345, data: str = ""):
+    """Build an Update with a callback_query, for inline button presses."""
+    update = MagicMock()
+    update.effective_chat.id = chat_id
+    update.callback_query = MagicMock()
+    update.callback_query.data = data
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+    update.callback_query.message = MagicMock()
+    update.callback_query.message.reply_text = AsyncMock()
+    return update
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_fresh_triggers_wizard(tmp_knowledge_dir):
+    """No profile on disk → cmd_start starts the wizard instead of welcome."""
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_start
+
+    init_profile()
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_start(update, ctx)
+
+    # State initialized
+    assert ctx.user_data["onboarding_step"] == 0
+    assert "onboarding_draft" in ctx.user_data
+    # Bilingual welcome + lang keyboard
+    call = update.message.reply_text.call_args
+    text = call[0][0]
+    assert "Привет" in text
+    assert "Hi" in text
+    assert "reply_markup" in call.kwargs
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_returning_skips_wizard(tmp_knowledge_dir):
+    """Existing profile → plain welcome."""
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import cmd_start
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_start(update, ctx)
+
+    assert "onboarding_step" not in ctx.user_data
+    text = update.message.reply_text.call_args[0][0]
+    assert "готов" in text
+
+
+@pytest.mark.asyncio
+async def test_wizard_lang_callback_advances_to_welcome(tmp_knowledge_dir):
+    """Clicking the English button writes language=en and advances to welcome."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler, cmd_start
+
+    init_profile()
+    update = _make_update(chat_id=12345)
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_start(update, ctx)
+
+    # Now click the English button
+    cb = _make_callback_update(12345, "onb:lang:en")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    assert ctx.user_data["onboarding_draft"]["language"] == "en"
+    assert ctx.user_data["onboarding_step"] == 1  # welcome
+    # After lang save, bot renders welcome body in English
+    rendered = cb.callback_query.message.reply_text.call_args[0][0]
+    assert "questions" in rendered or "walk" in rendered
+
+
+@pytest.mark.asyncio
+async def test_wizard_persona_text_step(tmp_knowledge_dir):
+    """After lang+welcome, bot asks for persona; user types it → advance."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler, cmd_start, handle_message
+
+    init_profile()
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        # /start → step 0
+        await cmd_start(_make_update(12345), ctx)
+        # onb:lang:ru → step 1
+        await callback_handler(_make_callback_update(12345, "onb:lang:ru"), ctx)
+        # onb:next (welcome → persona, step 2)
+        await callback_handler(_make_callback_update(12345, "onb:next"), ctx)
+
+    assert ctx.user_data["onboarding_step"] == 2  # persona step
+
+    # User types their persona
+    update = _make_update(12345, text="Senior dev, 10 years")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await handle_message(update, ctx)
+
+    assert ctx.user_data["onboarding_draft"]["persona"] == "Senior dev, 10 years"
+    assert ctx.user_data["onboarding_step"] == 3  # learning step
+
+
+@pytest.mark.asyncio
+async def test_wizard_multiline_text_parsed(tmp_knowledge_dir):
+    """Multiline 'learning' answer is split on newlines into a list."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler, cmd_start, handle_message
+
+    init_profile()
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_start(_make_update(12345), ctx)
+        await callback_handler(_make_callback_update(12345, "onb:lang:ru"), ctx)
+        await callback_handler(_make_callback_update(12345, "onb:next"), ctx)
+        await handle_message(_make_update(12345, text="Senior"), ctx)  # persona → 3
+
+        # Now at learning step
+        assert ctx.user_data["onboarding_step"] == 3
+        await handle_message(
+            _make_update(12345, text="AI agents\nRAG\n\n  docker  "),
+            ctx,
+        )
+
+    draft = ctx.user_data["onboarding_draft"]
+    assert draft["actively_learning"] == ["AI agents", "RAG", "docker"]
+    assert ctx.user_data["onboarding_step"] == 4  # stack step
+
+
+@pytest.mark.asyncio
+async def test_wizard_category_toggle_persists_in_draft(tmp_knowledge_dir):
+    """Clicking a category button toggles it in the draft and re-renders."""
+    from src.onboarding import new_draft
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    ctx = _make_context()
+    ctx.user_data["onboarding_step"] = 6  # categories step
+    ctx.user_data["onboarding_draft"] = new_draft()
+
+    cb1 = _make_callback_update(12345, "onb:cat:ai-agents")
+    cb2 = _make_callback_update(12345, "onb:cat:devops-selfhost")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb1, ctx)
+        await callback_handler(cb2, ctx)
+
+    selected = ctx.user_data["onboarding_draft"]["selected_categories"]
+    assert "ai-agents" in selected
+    assert "devops-selfhost" in selected
+
+
+@pytest.mark.asyncio
+async def test_wizard_category_toggle_twice_removes(tmp_knowledge_dir):
+    """Clicking a category a second time unselects it."""
+    from src.onboarding import new_draft
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    ctx = _make_context()
+    ctx.user_data["onboarding_step"] = 6
+    ctx.user_data["onboarding_draft"] = new_draft()
+
+    cb = _make_callback_update(12345, "onb:cat:ai-agents")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+        await callback_handler(cb, ctx)
+
+    assert ctx.user_data["onboarding_draft"]["selected_categories"] == {}
+
+
+@pytest.mark.asyncio
+async def test_wizard_done_applies_draft_and_clears_state(tmp_knowledge_dir):
+    """onb:done on categories step → auto-skip channels (empty presets) → done."""
+    import src.config
+    from src.onboarding import new_draft
+    from src.profile import init_profile, profile_exists
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    ctx = _make_context()
+    draft = new_draft()
+    draft["language"] = "en"
+    draft["persona"] = "Tester"
+    draft["selected_categories"] = {"ai-agents": "AI Agents desc"}
+    ctx.user_data["onboarding_step"] = 6  # categories
+    ctx.user_data["onboarding_draft"] = draft
+
+    cb = _make_callback_update(12345, "onb:done")
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.PRESET_CHANNELS", []),  # skip channels step
+    ):
+        await callback_handler(cb, ctx)
+
+    # State cleared
+    assert "onboarding_step" not in ctx.user_data
+    assert "onboarding_draft" not in ctx.user_data
+    # Profile + categories committed
+    assert profile_exists()
+    assert src.config.CATEGORIES_FILE.exists()
+
+
+@pytest.mark.asyncio
+async def test_wizard_skip_button_on_optional_step(tmp_knowledge_dir):
+    """Skip on notinterested (optional) step advances to categories."""
+    from src.onboarding import new_draft
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    ctx = _make_context()
+    ctx.user_data["onboarding_step"] = 5  # notinterested
+    ctx.user_data["onboarding_draft"] = new_draft()
+
+    cb = _make_callback_update(12345, "onb:skip")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    assert ctx.user_data["onboarding_step"] == 6
+
+
+@pytest.mark.asyncio
+async def test_wizard_stale_callback_noop(tmp_knowledge_dir):
+    """A wizard callback arriving after /cancel is a gentle no-op."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    ctx = _make_context()
+    # No onboarding_step set
+
+    cb = _make_callback_update(12345, "onb:lang:ru")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    # No crash, reply_markup clear called
+    cb.callback_query.edit_message_reply_markup.assert_called_once()
+
+
+# ── /cancel ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_cancel_wipes_flow_state(tmp_knowledge_dir):
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_cancel
+
+    init_profile()
+    ctx = _make_context(user_data={
+        "pending_channel": {"id": "UC_x"},
+        "waiting_new_category": "add_channel",
+        "onboarding_step": 3,
+        "onboarding_draft": {"persona": "x"},
+    })
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_cancel(update, ctx)
+
+    assert "pending_channel" not in ctx.user_data
+    assert "waiting_new_category" not in ctx.user_data
+    assert "onboarding_step" not in ctx.user_data
+    assert "onboarding_draft" not in ctx.user_data
+    text = update.message.reply_text.call_args[0][0]
+    assert "Отменено" in text or "Cancelled" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_cancel_without_state(tmp_knowledge_dir):
+    """/cancel with no active flow → 'nothing to cancel' message."""
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_cancel
+
+    init_profile()
+    ctx = _make_context()
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_cancel(update, ctx)
+
+    text = update.message.reply_text.call_args[0][0]
+    assert "Нечего" in text or "Nothing" in text
+
+
+# ── /onboarding ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_onboarding_fresh_starts_wizard(tmp_knowledge_dir):
+    """No profile → /onboarding runs _start_wizard directly."""
+    from src.profile import init_profile
+    from src.telegram_bot import cmd_onboarding
+
+    init_profile()
+    ctx = _make_context()
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_onboarding(update, ctx)
+
+    assert ctx.user_data["onboarding_step"] == 0
+
+
+@pytest.mark.asyncio
+async def test_cmd_onboarding_existing_profile_asks_confirm(tmp_knowledge_dir):
+    """Existing profile → confirm keyboard."""
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import cmd_onboarding
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+    update = _make_update(12345)
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_onboarding(update, ctx)
+
+    # No wizard state set yet
+    assert "onboarding_step" not in ctx.user_data
+    call = update.message.reply_text.call_args
+    assert "reply_markup" in call.kwargs
+
+
+@pytest.mark.asyncio
+async def test_onboarding_rerun_no_keeps_profile(tmp_knowledge_dir):
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "ru", "persona": "X"})
+    ctx = _make_context()
+
+    cb = _make_callback_update(12345, "onb:rerun:no")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    text = cb.callback_query.edit_message_text.call_args[0][0]
+    assert "как есть" in text or "as is" in text
+    assert "onboarding_step" not in ctx.user_data
+
+
+@pytest.mark.asyncio
+async def test_onboarding_rerun_yes_starts_wizard(tmp_knowledge_dir):
+    from src.profile import init_profile, save_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    save_profile({"language": "en", "persona": "X"})
+    ctx = _make_context()
+
+    cb = _make_callback_update(12345, "onb:rerun:yes")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(cb, ctx)
+
+    assert ctx.user_data["onboarding_step"] == 0

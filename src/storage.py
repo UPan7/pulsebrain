@@ -135,9 +135,16 @@ def save_entry(
     action_items: list[str],
     author: str | None = None,
     sitename: str | None = None,
+    raw_text: str | None = None,
     update_index: bool = True,
 ) -> Path:
-    """Save a knowledge entry as a .md file and update the index."""
+    """Save a knowledge entry as a .md file and update the index.
+
+    If *raw_text* is provided (the original transcript or article body), it is
+    written verbatim to a sibling file ``{stem}.source.txt`` in the same
+    directory. The sibling file is the lossless source — the .md is the
+    human-readable summary that references it.
+    """
     _validate_category(category)
     file_path = _build_file_path(category, source_name, title, date_str)
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,12 +197,29 @@ def save_entry(
 
     logger.info("Saved entry: %s", file_path)
 
+    # Sibling .source.txt — lossless original transcript / article body.
+    if raw_text:
+        source_path = _source_sibling_path(file_path)
+        try:
+            with open(source_path, "w", encoding="utf-8") as f:
+                f.write(raw_text)
+            logger.info("Saved source text: %s", source_path)
+        except OSError as exc:
+            # Don't fail the whole save just because the sibling crashed.
+            logger.warning("Failed to write source sibling for %s: %s",
+                           file_path, exc)
+
     _invalidate_entry_cache()
 
     if update_index:
         _update_index()
 
     return file_path
+
+
+def _source_sibling_path(md_path: Path) -> Path:
+    """Path of the .source.txt sibling for a given .md file."""
+    return md_path.with_name(md_path.stem + ".source.txt")
 
 
 # ── Move entry between categories ────────────────────────────────────────────
@@ -222,6 +246,13 @@ def move_entry(old_path: str, new_category: str) -> str | None:
     import re
     content = re.sub(r"^- \*\*Category:\*\* .+$", f"- **Category:** {new_category}", content, count=1, flags=re.MULTILINE)
     new_path.write_text(content, encoding="utf-8")
+
+    # Move the source-text sibling alongside, if it exists.
+    old_source = _source_sibling_path(old)
+    if old_source.exists():
+        new_source = _source_sibling_path(new_path)
+        old_source.rename(new_source)
+        logger.info("Moved source sibling: %s -> %s", old_source, new_source)
 
     old.unlink()
     logger.info("Moved entry: %s -> %s", old_path, new_path)

@@ -291,6 +291,37 @@ def test_pipeline_result_has_pending_id_not_file_path():
     assert "file_path" not in result
 
 
+def test_pipeline_passes_raw_transcript_to_stage_pending():
+    """The full transcript must be forwarded as raw_text — not thrown away."""
+    from src.pipeline import process_youtube_video
+
+    transcript = "Full transcript body that must reach the pending registry."
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value=transcript),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.stage_pending", return_value="deadbeef") as mock_stage,
+    ):
+        process_youtube_video("https://www.youtube.com/watch?v=rawtxt01")
+
+    assert mock_stage.call_args.kwargs["raw_text"] == transcript
+
+
+def test_pipeline_passes_article_text_to_stage_pending():
+    """Web article text is forwarded as raw_text too."""
+    from src.pipeline import process_web_article
+
+    article = {**_article_dict(), "text": "The full body of the article."}
+    with (
+        patch("src.pipeline.extract_web_article", return_value=article),
+        patch("src.pipeline.summarize_content", return_value=_summary_dict()),
+        patch("src.pipeline.stage_pending", return_value="cafef00d") as mock_stage,
+    ):
+        process_web_article("https://example.com/foo")
+
+    assert mock_stage.call_args.kwargs["raw_text"] == "The full body of the article."
+
+
 def test_pipeline_invalid_video_url_returns_error():
     """URL with no extractable video ID → error dict."""
     from src.pipeline import process_youtube_video

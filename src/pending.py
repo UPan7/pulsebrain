@@ -91,8 +91,14 @@ def stage_pending(
     action_items: list[str],
     author: str | None = None,
     sitename: str | None = None,
+    raw_text: str | None = None,
 ) -> str:
-    """Stage a new entry awaiting user approval. Returns a short pending_id."""
+    """Stage a new entry awaiting user approval. Returns a short pending_id.
+
+    *raw_text* is the lossless original (transcript or article body). It is
+    inlined in pending.json so commit_pending can write the source sibling
+    alongside the .md when the user approves.
+    """
     _validate_category(category)
     pending_id = _make_pending_id(content_id)
 
@@ -114,6 +120,7 @@ def stage_pending(
         "action_items": action_items,
         "author": author,
         "sitename": sitename,
+        "raw_text": raw_text,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -195,6 +202,7 @@ def commit_pending(pending_id: str) -> Path | None:
         action_items=entry["action_items"],
         author=entry.get("author"),
         sitename=entry.get("sitename"),
+        raw_text=entry.get("raw_text"),
     )
 
     mark_processed(entry["content_id"], status="ok")

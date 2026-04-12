@@ -85,6 +85,8 @@ def _process_content(
         final_category, is_new_category = categorize_content(title, content)
 
     # ── Stage (awaiting user approval) ──────────────────────────────────────
+    # raw_text is the lossless original — saved alongside the .md on commit
+    # so the knowledge base can be used as a corpus for future tools/queries.
     stage_kwargs: dict[str, Any] = {
         "content_id": content_id,
         "source_url": url,
@@ -102,6 +104,7 @@ def _process_content(
         "action_items": summary.get("action_items", []),
         "author": locals().get("author") if source_type == "web_article" else None,
         "sitename": locals().get("sitename") if source_type == "web_article" else None,
+        "raw_text": content,
     }
 
     pending_id = stage_pending(**stage_kwargs)

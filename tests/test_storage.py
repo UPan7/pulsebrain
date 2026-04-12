@@ -625,3 +625,98 @@ def test_save_entry_with_unicode_title(tmp_knowledge_dir, sample_entry_kwargs):
     assert path.exists()
     content = path.read_text("utf-8")
     assert "Привет Мир Тест" in content
+
+
+# ── raw_text sibling ───────────────────────────────────────────────────────
+
+
+def test_save_entry_writes_source_sibling_when_raw_text_given(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    from src.storage import save_entry, _source_sibling_path
+
+    transcript = "This is the full transcript of the video. " * 100
+    path = save_entry(
+        **sample_entry_kwargs,
+        raw_text=transcript,
+        update_index=False,
+    )
+
+    sibling = _source_sibling_path(path)
+    assert sibling.exists()
+    assert sibling.read_text("utf-8") == transcript
+    # The sibling lives in the same dir as the .md
+    assert sibling.parent == path.parent
+    # And uses the .source.txt suffix
+    assert sibling.name.endswith(".source.txt")
+
+
+def test_save_entry_skips_sibling_when_raw_text_none(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """No raw_text → no sibling file written."""
+    from src.storage import save_entry, _source_sibling_path
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    assert not _source_sibling_path(path).exists()
+
+
+def test_save_entry_returns_md_path_even_if_sibling_write_fails(
+    tmp_knowledge_dir, sample_entry_kwargs, monkeypatch
+):
+    """A flaky filesystem on the sibling write must not abort the whole save."""
+    import builtins
+    from src.storage import save_entry
+
+    real_open = builtins.open
+
+    def flaky_open(path, *args, **kwargs):
+        if str(path).endswith(".source.txt"):
+            raise OSError("disk full")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+
+    path = save_entry(
+        **sample_entry_kwargs,
+        raw_text="some transcript",
+        update_index=False,
+    )
+    # The .md still landed
+    assert path.exists()
+
+
+def test_move_entry_relocates_source_sibling(tmp_knowledge_dir, sample_entry_kwargs):
+    """move_entry must carry the .source.txt sibling along with the .md."""
+    from src.storage import save_entry, move_entry, _source_sibling_path
+
+    path = save_entry(
+        **sample_entry_kwargs,
+        raw_text="original transcript text",
+        update_index=False,
+    )
+    old_sibling = _source_sibling_path(path)
+    assert old_sibling.exists()
+
+    new_md_str = move_entry(str(path), "new-cat")
+    new_md = Path(new_md_str)
+    new_sibling = _source_sibling_path(new_md)
+
+    # Old files gone, new files present
+    assert not path.exists()
+    assert not old_sibling.exists()
+    assert new_md.exists()
+    assert new_sibling.exists()
+    assert new_sibling.read_text("utf-8") == "original transcript text"
+
+
+def test_move_entry_handles_missing_sibling(tmp_knowledge_dir, sample_entry_kwargs):
+    """Pre-raw_text entries (no sibling) move cleanly without errors."""
+    from src.storage import save_entry, move_entry, _source_sibling_path
+
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    assert not _source_sibling_path(path).exists()
+
+    new_md_str = move_entry(str(path), "new-cat")
+    assert new_md_str is not None
+    assert Path(new_md_str).exists()

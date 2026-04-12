@@ -42,13 +42,15 @@ def test_youtube_pipeline_stage_then_commit(tmp_knowledge_dir):
     from src.pending import commit_pending, get_pending
     from src.storage import (
         is_processed, make_content_id, _parse_entry_metadata, search_knowledge,
+        _source_sibling_path,
     )
 
+    transcript = "A long transcript about Claude Code that must survive end-to-end."
     with (
         patch("src.pipeline.get_video_metadata", return_value={
             "title": "Claude Code Tutorial", "channel": "FireshipDev", "upload_date": None,
         }),
-        patch("src.pipeline.get_transcript", return_value="A long transcript about Claude Code."),
+        patch("src.pipeline.get_transcript", return_value=transcript),
         patch("src.pipeline.summarize_content", return_value=_summary()),
     ):
         result = process_youtube_video(
@@ -106,6 +108,11 @@ def test_youtube_pipeline_stage_then_commit(tmp_knowledge_dir):
 
     # 9. Search finds it
     assert any("Claude Code Tutorial" in r["title"] for r in search_knowledge("Claude"))
+
+    # 10. Source-text sibling exists with the original transcript verbatim
+    sibling = _source_sibling_path(file_path)
+    assert sibling.exists()
+    assert sibling.read_text("utf-8") == transcript
 
 
 def test_web_pipeline_stage_then_commit(tmp_knowledge_dir):

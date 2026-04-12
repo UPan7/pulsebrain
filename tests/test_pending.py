@@ -292,3 +292,41 @@ def test_load_pending_at_startup(tmp_knowledge_dir, sample_pending_kwargs):
 
     init_pending()
     assert get_pending("abc12345") is not None
+
+
+# ── raw_text round-trip ────────────────────────────────────────────────────
+
+
+def test_stage_pending_stores_raw_text(tmp_knowledge_dir, sample_pending_kwargs):
+    from src.pending import init_pending, stage_pending, get_pending
+
+    init_pending()
+    transcript = "Full transcript body of the source video. " * 50
+    pending_id = stage_pending(**sample_pending_kwargs, raw_text=transcript)
+
+    entry = get_pending(pending_id)
+    assert entry["raw_text"] == transcript
+
+
+def test_stage_pending_raw_text_defaults_to_none(tmp_knowledge_dir, sample_pending_kwargs):
+    from src.pending import init_pending, stage_pending, get_pending
+
+    init_pending()
+    pending_id = stage_pending(**sample_pending_kwargs)
+    assert get_pending(pending_id)["raw_text"] is None
+
+
+def test_commit_pending_writes_source_sibling(tmp_knowledge_dir, sample_pending_kwargs):
+    """commit_pending forwards raw_text → save_entry → .source.txt sibling."""
+    from src.pending import init_pending, stage_pending, commit_pending
+    from src.storage import init_processed, _source_sibling_path
+
+    init_processed()
+    init_pending()
+    transcript = "Lossless transcript saved alongside the summary."
+    pending_id = stage_pending(**sample_pending_kwargs, raw_text=transcript)
+    file_path = commit_pending(pending_id)
+
+    sibling = _source_sibling_path(file_path)
+    assert sibling.exists()
+    assert sibling.read_text("utf-8") == transcript

@@ -235,22 +235,40 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 # ── Onboarding wizard helpers ───────────────────────────────────────────────
 
 
+def _build_language_grid(callback_prefix: str) -> InlineKeyboardMarkup:
+    """Build a 2×5 inline keyboard covering the World 10 language set.
+
+    Layout order matches `SUPPORTED_LANGS` (en, de, fr, es, it, pt, zh,
+    ja, ru, ar). Each button shows flag + native name and posts back
+    `{callback_prefix}:{code}` — the caller's callback handler branches
+    on the prefix to either save-and-confirm (`/language`) or save-and-
+    advance (onboarding wizard).
+    """
+    from src.strings import LANGUAGE_FLAGS, LANGUAGE_NATIVE_NAMES, SUPPORTED_LANGS
+
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for code in SUPPORTED_LANGS:
+        label = f"{LANGUAGE_FLAGS[code]} {LANGUAGE_NATIVE_NAMES[code]}"
+        row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}:{code}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
 def _language_keyboard() -> InlineKeyboardMarkup:
-    """Shared [🇷🇺 Русский] [🇬🇧 English] picker used by wizard + /language."""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🇷🇺 Русский", callback_data="lang:ru"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="lang:en"),
-    ]])
+    """World 10 picker used by /language. Callback prefix `lang:`."""
+    return _build_language_grid("lang")
 
 
 def _wizard_lang_keyboard() -> InlineKeyboardMarkup:
-    """Wizard step 0 uses the same buttons but its own callback prefix
-    so the callback handler can advance the wizard instead of just
-    saving the language."""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🇷🇺 Русский", callback_data="onb:lang:ru"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="onb:lang:en"),
-    ]])
+    """Wizard step 0 uses the same grid but its own callback prefix
+    (`onb:lang:`) so the callback handler can advance the wizard instead
+    of just saving the language."""
+    return _build_language_grid("onb:lang")
 
 
 def _wizard_skip_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -306,16 +324,40 @@ def _wizard_channel_keyboard(draft: dict[str, Any], lang: str) -> InlineKeyboard
 async def _start_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Initialize wizard state and send step 0 (language picker).
 
-    Step 0 is bilingual — we don't know the user's language yet.
+    Step 0 greets the user in English (the new default) and presents
+    the World 10 language picker. Phase 7.6 additionally pre-seeds
+    draft["language"] from Telegram's `effective_user.language_code`
+    hint so users whose Telegram locale matches a supported language
+    can tap the pre-highlighted button (or "Start") without explicit
+    picking.
     """
+    from src.strings import SUPPORTED_LANGS
+
     context.user_data["onboarding_step"] = 0
-    context.user_data["onboarding_draft"] = new_draft()
-    bilingual = (
-        t("welcome_first_run", "ru") + "\n\n" + t("welcome_first_run", "en")
-        + "\n\n" + t("wizard_lang_prompt", "ru") + " / "
-        + t("wizard_lang_prompt", "en")
+    draft = new_draft()
+
+    # Phase 7.6: auto-detect from Telegram locale. language_code is an
+    # IETF tag like "en-US", "zh-Hans", "pt-BR" — normalize by splitting
+    # on "-" and lowercasing. Fall back to English when the hint isn't
+    # in our supported set.
+    hint = ""
+    user = getattr(update, "effective_user", None)
+    if user is not None:
+        hint = (getattr(user, "language_code", "") or "").split("-")[0].lower()
+    if hint in SUPPORTED_LANGS:
+        draft["language"] = hint
+    else:
+        draft["language"] = "en"
+
+    context.user_data["onboarding_draft"] = draft
+
+    intro_lang = draft["language"]
+    text = (
+        t("welcome_first_run", intro_lang)
+        + "\n\n"
+        + t("wizard_lang_prompt", intro_lang)
     )
-    await update.message.reply_text(bilingual, reply_markup=_wizard_lang_keyboard())
+    await update.message.reply_text(text, reply_markup=_wizard_lang_keyboard())
 
 
 async def _send_wizard_step(

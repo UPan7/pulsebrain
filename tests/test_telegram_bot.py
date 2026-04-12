@@ -10,10 +10,16 @@ import pytest
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def _make_update(chat_id: int = 12345, text: str = ""):
-    """Build a minimal mock Update."""
+def _make_update(chat_id: int = 12345, text: str = "", language_code: str = "en-US"):
+    """Build a minimal mock Update.
+
+    *language_code* emulates Telegram's `effective_user.language_code`
+    hint — set to "en-US" by default so existing tests keep working
+    without touching it.
+    """
     update = MagicMock()
     update.effective_chat.id = chat_id
+    update.effective_user.language_code = language_code
 
     # reply_text returns a message with edit_text
     reply_msg = MagicMock()
@@ -93,23 +99,42 @@ async def test_cmd_start_replies_in_english_when_profile_is_en():
 
 
 @pytest.mark.asyncio
-async def test_cmd_start_first_run_bilingual_when_no_profile():
-    """Fresh install with no profile → bilingual welcome (Phase 5.3 wizard
-    will replace this branch; until then we show both languages stacked)."""
+async def test_cmd_start_first_run_shows_welcome_in_detected_language():
+    """Phase 7.4 + 7.6: fresh install → welcome rendered in the language
+    hinted by update.effective_user.language_code (normalized and filtered
+    through SUPPORTED_LANGS). Falls back to English for unrecognized hints.
+    """
     from src.telegram_bot import cmd_start
 
-    update = _make_update(chat_id=12345)
+    # User locale = German → welcome rendered in German
+    update = _make_update(chat_id=12345, language_code="de-DE")
     ctx = _make_context()
     with (
         patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
         patch("src.telegram_bot.profile_exists", return_value=False),
-        patch("src.telegram_bot.get_language", return_value="ru"),
     ):
         await cmd_start(update, ctx)
     text = update.message.reply_text.call_args[0][0]
-    # Contains both language welcomes
-    assert "Привет" in text
-    assert "Hi" in text
+    assert "Hallo" in text  # German welcome
+    # Draft should be pre-seeded with the detected language
+    assert ctx.user_data["onboarding_draft"]["language"] == "de"
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_first_run_falls_back_to_english_for_unknown_locale():
+    """Locale outside SUPPORTED_LANGS → English welcome + draft."""
+    from src.telegram_bot import cmd_start
+
+    update = _make_update(chat_id=12345, language_code="sw")  # Swahili: unsupported
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.profile_exists", return_value=False),
+    ):
+        await cmd_start(update, ctx)
+    text = update.message.reply_text.call_args[0][0]
+    assert "Hi" in text  # English welcome
+    assert ctx.user_data["onboarding_draft"]["language"] == "en"
 
 
 # ── URL routing in handle_message ──────────────────────────────────────────
@@ -1571,12 +1596,15 @@ async def test_cmd_start_fresh_triggers_wizard(tmp_knowledge_dir):
     # State initialized
     assert ctx.user_data["onboarding_step"] == 0
     assert "onboarding_draft" in ctx.user_data
-    # Bilingual welcome + lang keyboard
+    # Single-language welcome (Phase 7.4 — defaults to English because
+    # the _make_update helper's default language_code is "en-US") + 10-lang keyboard
     call = update.message.reply_text.call_args
     text = call[0][0]
-    assert "Привет" in text
     assert "Hi" in text
     assert "reply_markup" in call.kwargs
+    # 10-lang picker has 5 rows × 2 buttons
+    keyboard = call.kwargs["reply_markup"]
+    assert len(keyboard.inline_keyboard) == 5
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,24 @@
 
 from __future__ import annotations
 
+# Stub heavy native deps so tests run in minimal environments where
+# feedparser / trafilatura are not installed. Real installs (if present)
+# take precedence because we only stub when the module is missing.
+import sys
+import types
+
+if "feedparser" not in sys.modules:
+    _fp = types.ModuleType("feedparser")
+    _fp.parse = lambda *a, **k: types.SimpleNamespace(entries=[])
+    sys.modules["feedparser"] = _fp
+
+if "trafilatura" not in sys.modules:
+    _tf = types.ModuleType("trafilatura")
+    _tf.fetch_url = lambda *a, **k: None
+    _tf.extract = lambda *a, **k: None
+    _tf.extract_metadata = lambda *a, **k: None
+    sys.modules["trafilatura"] = _tf
+
 import asyncio
 import json
 from pathlib import Path
@@ -125,6 +143,20 @@ def mock_telegram_context():
 # ---------------------------------------------------------------------------
 # Sample data helpers
 # ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def sample_summary_dict() -> dict[str, Any]:
+    """Canonical summarize_content() output for reuse across tests."""
+    return {
+        "summary_bullets": ["Bullet one", "Bullet two"],
+        "detailed_notes": "Detailed notes paragraph in Russian.",
+        "key_insights": ["Insight one"],
+        "action_items": ["Action one"],
+        "topics": ["ai", "agents"],
+        "relevance_score": 8,
+        "suggested_category": "ai-agents",
+    }
+
 
 @pytest.fixture()
 def sample_entry_kwargs() -> dict[str, Any]:

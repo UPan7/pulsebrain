@@ -155,6 +155,24 @@ def test_summarize_uses_unknown_when_date_missing(sample_summary_dict):
     assert "unknown" in prompt
 
 
+def test_summarize_prompt_enforces_humanizer_voice():
+    """The prompt must keep the readability constraints that fix the dry-summary bug."""
+    from src.summarize import SUMMARIZE_PROMPT
+
+    # Voice / readability constraints
+    assert "WRITING VOICE" in SUMMARIZE_PROMPT
+    assert "Full sentences" in SUMMARIZE_PROMPT
+    assert "Active voice" in SUMMARIZE_PROMPT
+    assert "BANNED phrases" in SUMMARIZE_PROMPT
+    # Length budget — must mention the 2-minute target so the LLM has a target
+    assert "LENGTH BUDGET" in SUMMARIZE_PROMPT
+    assert "2 minutes" in SUMMARIZE_PROMPT
+    assert "500 words" in SUMMARIZE_PROMPT
+    # Few-shot examples
+    assert "BAD:" in SUMMARIZE_PROMPT
+    assert "GOOD:" in SUMMARIZE_PROMPT
+
+
 # ── answer_question ────────────────────────────────────────────────────────
 
 

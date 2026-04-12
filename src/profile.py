@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ── Default seed ──────────────────────────────────────────────────────────
 
 _DEFAULT_PROFILE: dict[str, Any] = {
-    "language": "ru",
+    "language": "en",
     "persona": "",
     "skill_level": "",
     "known_stack": [],
@@ -152,13 +152,20 @@ def profile_exists() -> bool:
 
 
 def get_language() -> str:
-    """Shortcut for load_profile()['language'] with a hard fallback to 'ru'."""
+    """Shortcut for load_profile()['language'] with a hard fallback to 'en'.
+
+    Returns one of src.strings.SUPPORTED_LANGS. Anything else (unset,
+    corrupted, an old 'ru' profile from before Phase 7) normalizes to
+    English. Old Russian profiles keep working — 'ru' is still in the
+    World 10 set — they just aren't the default anymore.
+    """
+    from src.strings import SUPPORTED_LANGS
     try:
-        lang = load_profile().get("language", "ru")
+        lang = load_profile().get("language", "en")
     except Exception:
-        return "ru"
-    if lang not in ("ru", "en"):
-        return "ru"
+        return "en"
+    if lang not in SUPPORTED_LANGS:
+        return "en"
     return lang
 
 
@@ -259,7 +266,7 @@ def build_relevance_context() -> dict[str, Any]:
         logger.warning("Failed to read rejected log for context: %s", exc)
 
     return {
-        "language": profile.get("language", "ru"),
+        "language": profile.get("language", "en"),
         "persona": profile.get("persona", ""),
         "skill_level": profile.get("skill_level", ""),
         "known_stack": list(profile.get("known_stack", [])),

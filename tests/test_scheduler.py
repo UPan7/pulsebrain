@@ -554,10 +554,11 @@ async def test_round_digest_counts_mixed_outcomes():
 
     app.bot.send_message.assert_called_once()
     text = app.bot.send_message.call_args.kwargs["text"]
-    assert "Каналов проверено: 1" in text
-    assert "Новых в /pending: 1" in text
-    assert "Авто-отклонено: 1" in text
-    assert "Ошибок: 1" in text
+    # Default language is English (Phase 7.1)
+    assert "Channels checked: 1" in text
+    assert "New in /pending: 1" in text
+    assert "Auto-rejected: 1" in text
+    assert "Errors: 1" in text
 
 
 @pytest.mark.asyncio
@@ -635,7 +636,8 @@ async def test_round_digest_counts_only_enabled_channels():
         await run_channel_check(app=app)
 
     text = app.bot.send_message.call_args.kwargs["text"]
-    assert "Каналов проверено: 2" in text
+    # Default language is English (Phase 7.1)
+    assert "Channels checked: 2" in text
 
 
 @pytest.mark.asyncio

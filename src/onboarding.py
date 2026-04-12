@@ -45,7 +45,7 @@ OPTIONAL_STEPS: frozenset[str] = frozenset({"notinterested"})
 def new_draft() -> dict[str, Any]:
     """Fresh draft with empty fields. Language gets set by step 0."""
     return {
-        "language": "ru",
+        "language": "en",
         "persona": "",
         "actively_learning": [],
         "known_stack": [],
@@ -87,10 +87,11 @@ def apply_draft(draft: dict[str, Any]) -> dict[str, int]:
     """
     from src.config import add_category, load_channels, save_channels
     from src.profile import save_profile
+    from src.strings import SUPPORTED_LANGS
 
-    language = draft.get("language", "ru")
-    if language not in ("ru", "en"):
-        language = "ru"
+    language = draft.get("language", "en")
+    if language not in SUPPORTED_LANGS:
+        language = "en"
 
     profile = {
         "language": language,

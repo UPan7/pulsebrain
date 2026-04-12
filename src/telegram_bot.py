@@ -322,7 +322,7 @@ async def _send_wizard_step(
     key = step_key(step_index)
     if key is None:
         return
-    lang = draft.get("language", "ru")
+    lang = draft.get("language", "en")
 
     if key == "welcome":
         await send(
@@ -425,8 +425,9 @@ async def _handle_onboarding_callback(
 
     # Language pick (step 0)
     if data.startswith("onb:lang:"):
+        from src.strings import SUPPORTED_LANGS
         code = data.split(":", 2)[2]
-        if code not in ("ru", "en"):
+        if code not in SUPPORTED_LANGS:
             return
         draft["language"] = code
         context.user_data["onboarding_draft"] = draft
@@ -461,7 +462,7 @@ async def _handle_onboarding_callback(
         context.user_data["onboarding_draft"] = draft
         # Re-render keyboard with the updated checkmarks
         await query.edit_message_reply_markup(
-            reply_markup=_wizard_category_keyboard(draft, draft.get("language", "ru"))
+            reply_markup=_wizard_category_keyboard(draft, draft.get("language", "en"))
         )
         return
 
@@ -484,7 +485,7 @@ async def _handle_onboarding_callback(
             selected.append(channel)
         context.user_data["onboarding_draft"] = draft
         await query.edit_message_reply_markup(
-            reply_markup=_wizard_channel_keyboard(draft, draft.get("language", "ru"))
+            reply_markup=_wizard_channel_keyboard(draft, draft.get("language", "en"))
         )
         return
 
@@ -1075,16 +1076,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await _handle_onboarding_callback(update, context, data)
         return
 
-    # ── /language callback (shares the [🇷🇺][🇬🇧] keyboard shape) ─────────
+    # ── /language callback (shared keyboard for the World 10 picker) ────────
     if data.startswith("lang:"):
+        from src.strings import SUPPORTED_LANGS
         code = data.split(":", 1)[1]
-        if code not in ("ru", "en"):
+        if code not in SUPPORTED_LANGS:
             return
         from src.profile import load_profile, save_profile
+        from src.strings import LANGUAGE_NATIVE_NAMES
         profile = load_profile()
         profile["language"] = code
         save_profile(profile)
-        name = t(f"language_name_{code}", code)
+        name = LANGUAGE_NATIVE_NAMES[code]
         await query.edit_message_text(t("language_changed", code, name=name))
         return
 

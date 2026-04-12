@@ -149,12 +149,12 @@ def summarize_content(
         ctx = build_relevance_context()
     except Exception as exc:
         logger.warning("Failed to build relevance context: %s", exc)
-        ctx = {"language": "ru"}
+        ctx = {"language": "en"}
 
     user_context_block = format_relevance_context(ctx)
-    language = ctx.get("language", "ru")
+    language = ctx.get("language", "en")
     language_directive = LANGUAGE_DIRECTIVES.get(
-        language, LANGUAGE_DIRECTIVES["ru"]
+        language, LANGUAGE_DIRECTIVES["en"]
     )
 
     prompt = SUMMARIZE_PROMPT.format(

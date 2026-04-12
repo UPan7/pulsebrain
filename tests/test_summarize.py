@@ -326,8 +326,8 @@ def test_summarize_uses_profile_language_en(tmp_knowledge_dir, sample_summary_di
     assert "Write in Russian" not in prompt
 
 
-def test_summarize_defaults_to_ru_when_profile_missing(tmp_knowledge_dir, sample_summary_dict):
-    """No profile on disk → the prompt still renders cleanly in Russian."""
+def test_summarize_defaults_to_en_when_profile_missing(tmp_knowledge_dir, sample_summary_dict):
+    """No profile on disk → the prompt still renders cleanly in English (Phase 7.1 default)."""
     from src.profile import init_profile
     from src.summarize import summarize_content
 
@@ -338,7 +338,7 @@ def test_summarize_defaults_to_ru_when_profile_missing(tmp_knowledge_dir, sample
         summarize_content("content", "T", "S", "youtube_video")
 
     prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
-    assert "Write in Russian" in prompt
+    assert "Write in English" in prompt
     # Still has the USER CONTEXT header even when all fields are empty
     assert "USER CONTEXT" in prompt
 

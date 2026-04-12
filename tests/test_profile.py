@@ -24,17 +24,17 @@ def test_init_profile_on_missing_file_does_not_write(tmp_knowledge_dir):
     assert not src.config.PROFILE_FILE.exists()
 
     profile = load_profile()
-    assert profile["language"] == "ru"
+    assert profile["language"] == "en"
     assert profile["persona"] == ""
     assert profile["known_stack"] == []
     assert profile["actively_learning"] == []
 
 
-def test_default_profile_language_is_ru(tmp_knowledge_dir):
+def test_default_profile_language_is_en(tmp_knowledge_dir):
     from src.profile import init_profile, load_profile
 
     init_profile()
-    assert load_profile()["language"] == "ru"
+    assert load_profile()["language"] == "en"
 
 
 def test_load_profile_backfills_missing_keys(tmp_knowledge_dir):
@@ -67,7 +67,7 @@ def test_load_profile_falls_back_on_corrupt_yaml(tmp_knowledge_dir):
     init_profile()
     # Graceful: defaults instead of crashing
     profile = load_profile()
-    assert profile["language"] == "ru"
+    assert profile["language"] == "en"
 
 
 def test_load_profile_falls_back_on_non_mapping(tmp_knowledge_dir):
@@ -79,7 +79,7 @@ def test_load_profile_falls_back_on_non_mapping(tmp_knowledge_dir):
     src.config.PROFILE_FILE.write_text("- just\n- a\n- list\n", encoding="utf-8")
 
     init_profile()
-    assert load_profile()["language"] == "ru"
+    assert load_profile()["language"] == "en"
 
 
 # ── save_profile ─────────────────────────────────────────────────────────
@@ -143,12 +143,12 @@ def test_load_profile_returns_independent_copy(tmp_knowledge_dir):
 
     init_profile()
     a = load_profile()
-    a["language"] = "en"
+    a["language"] = "de"
     a["known_stack"].append("docker")
 
     # The cache stays pristine
     b = load_profile()
-    assert b["language"] == "ru"
+    assert b["language"] == "en"
     # NOTE: list values share references with the cache — callers should
     # deep-copy if they intend to mutate. We assert the top-level language
     # is independent, which is what matters for the language flow.
@@ -157,27 +157,36 @@ def test_load_profile_returns_independent_copy(tmp_knowledge_dir):
 # ── get_language ──────────────────────────────────────────────────────────
 
 
-def test_get_language_default_ru(tmp_knowledge_dir):
+def test_get_language_default_en(tmp_knowledge_dir):
     from src.profile import get_language, init_profile
 
     init_profile()
-    assert get_language() == "ru"
+    assert get_language() == "en"
 
 
 def test_get_language_reads_saved_value(tmp_knowledge_dir):
     from src.profile import get_language, init_profile, save_profile
 
     init_profile()
-    save_profile({"language": "en", "persona": "test"})
-    assert get_language() == "en"
+    save_profile({"language": "de", "persona": "test"})
+    assert get_language() == "de"
 
 
-def test_get_language_normalizes_unknown_to_ru(tmp_knowledge_dir):
+def test_get_language_reads_russian_profile(tmp_knowledge_dir):
+    """Russian is still supported — it's just not the default anymore."""
     from src.profile import get_language, init_profile, save_profile
 
     init_profile()
-    save_profile({"language": "de", "persona": "test"})  # unsupported
+    save_profile({"language": "ru", "persona": "test"})
     assert get_language() == "ru"
+
+
+def test_get_language_normalizes_unknown_to_en(tmp_knowledge_dir):
+    from src.profile import get_language, init_profile, save_profile
+
+    init_profile()
+    save_profile({"language": "xx", "persona": "test"})  # fake code
+    assert get_language() == "en"
 
 
 # ── profile_exists ───────────────────────────────────────────────────────
@@ -235,7 +244,7 @@ def test_build_relevance_context_empty_base(tmp_knowledge_dir):
     init_profile()
     ctx = build_relevance_context()
 
-    assert ctx["language"] == "ru"
+    assert ctx["language"] == "en"
     assert ctx["top_categories"] == []
     assert ctx["top_topics"] == []
     assert ctx["recent_approved_avg"] == 0.0

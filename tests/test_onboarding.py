@@ -76,7 +76,7 @@ def test_parse_multiline_empty_input():
 def test_new_draft_has_empty_fields():
     from src.onboarding import new_draft
     d = new_draft()
-    assert d["language"] == "ru"
+    assert d["language"] == "en"
     assert d["persona"] == ""
     assert d["actively_learning"] == []
     assert d["known_stack"] == []
@@ -193,7 +193,19 @@ def test_apply_draft_normalizes_unknown_language(tmp_knowledge_dir):
     draft = _sample_draft()
     draft["language"] = "klingon"
     apply_draft(draft)
-    assert load_profile()["language"] == "ru"  # fallback
+    assert load_profile()["language"] == "en"  # fallback
+
+
+def test_apply_draft_preserves_russian_selection(tmp_knowledge_dir):
+    """Russian is still a valid World 10 choice — it round-trips as-is."""
+    from src.onboarding import apply_draft
+    from src.profile import init_profile, load_profile
+
+    init_profile()
+    draft = _sample_draft()
+    draft["language"] = "ru"
+    apply_draft(draft)
+    assert load_profile()["language"] == "ru"
 
 
 def test_apply_draft_handles_empty_draft(tmp_knowledge_dir):
@@ -205,6 +217,6 @@ def test_apply_draft_handles_empty_draft(tmp_knowledge_dir):
     apply_draft(new_draft())
 
     profile = load_profile()
-    assert profile["language"] == "ru"
+    assert profile["language"] == "en"
     assert profile["persona"] == ""
     assert profile["known_stack"] == []

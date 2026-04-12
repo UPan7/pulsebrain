@@ -312,20 +312,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Неизвестный тип контента: {source_type}",
         "pipeline_err_summarize_failed": "Не удалось создать саммари для: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Использование: /get <entry_id>\n\n"
-            "Скопируй entry_id из /recent или /search — это 8-значный "
-            "код в квадратных скобках рядом с каждой записью."
+            "Использование:\n"
+            "• /get — браузер по категориям\n"
+            "• /get <entry_id> — открыть запись по 8-значному ID"
         ),
         "get_not_found": (
             "⚠️ Запись `{entry_id}` не найдена. Запусти /recent или "
             "/search чтобы увидеть актуальные ID."
         ),
         "get_read_failed": "⚠️ Не удалось прочитать файл записи с диска.",
-        "recent_get_hint": "💡 /get <id> — полный текст + скачивание файлов",
-        "entry_btn_md_file": "📎 Скачать .md",
-        "entry_btn_raw_file": "📎 Сырой текст",
+        "recent_get_hint": "💡 /get — браузер по категориям; /get <id> — сразу открыть запись",
+        "get_pick_category": "📂 Выбери категорию:",
+        "get_pick_entry": "📁 {category} — записей: {count}. Выбери:",
+        "get_empty_base": "📭 База знаний пуста. Кинь мне ссылку — и начнём.",
+        "get_category_empty": "📭 В этой категории пока ничего нет.",
+        "entry_btn_md_file": "📄 Саммари (.md)",
+        "entry_btn_raw_file": "📜 Полный исходник",
         "entry_no_raw_text": "Сырого текста для этой записи нет.",
         "entry_file_caption": "📎 {name}",
     },
@@ -568,20 +572,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Unknown content type: {source_type}",
         "pipeline_err_summarize_failed": "Couldn't produce a summary for: {title}",
 
-        # ── Phase 7.9: /get command + file access ──
+        # ── Phase 7.9 / Phase 8: /get command + browser ──
         "get_usage": (
-            "Usage: /get <entry_id>\n\n"
-            "Get the entry_id from /recent or /search — it's the 8-char "
-            "code in square brackets next to each item."
+            "Usage:\n"
+            "• /get — browse by category\n"
+            "• /get <entry_id> — open a specific entry by its 8-char ID"
         ),
         "get_not_found": (
             "⚠️ Entry `{entry_id}` not found. Run /recent or /search to "
             "see current IDs."
         ),
         "get_read_failed": "⚠️ Failed to read the entry file from disk.",
-        "recent_get_hint": "💡 /get <id> — full text + file downloads",
-        "entry_btn_md_file": "📎 Download .md",
-        "entry_btn_raw_file": "📎 Raw transcript",
+        "recent_get_hint": "💡 /get — browse by category; /get <id> — jump to a specific entry",
+        "get_pick_category": "📂 Pick a category to browse:",
+        "get_pick_entry": "📁 {category} — {count} entries. Pick one:",
+        "get_empty_base": "📭 Knowledge base is empty. Drop me a link first.",
+        "get_category_empty": "📭 No entries in this category yet.",
+        "entry_btn_md_file": "📄 Summary (.md)",
+        "entry_btn_raw_file": "📜 Full source",
         "entry_no_raw_text": "No raw-text sidecar for this entry.",
         "entry_file_caption": "📎 {name}",
     },
@@ -815,20 +823,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Unbekannter Inhaltstyp: {source_type}",
         "pipeline_err_summarize_failed": "Zusammenfassung konnte nicht erstellt werden für: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Verwendung: /get <entry_id>\n\n"
-            "Die entry_id findest du in /recent oder /search — der "
-            "8-stellige Code in eckigen Klammern neben jedem Eintrag."
+            "Verwendung:\n"
+            "• /get — nach Kategorie durchsuchen\n"
+            "• /get <entry_id> — Eintrag direkt per 8-stelliger ID öffnen"
         ),
         "get_not_found": (
             "⚠️ Eintrag `{entry_id}` nicht gefunden. Nutze /recent oder "
             "/search für aktuelle IDs."
         ),
         "get_read_failed": "⚠️ Konnte die Eintragsdatei nicht von der Festplatte lesen.",
-        "recent_get_hint": "💡 /get <id> — Volltext + Dateidownloads",
-        "entry_btn_md_file": "📎 .md herunterladen",
-        "entry_btn_raw_file": "📎 Rohtext",
+        "recent_get_hint": "💡 /get — nach Kategorie durchsuchen; /get <id> — direkt zum Eintrag",
+        "get_pick_category": "📂 Kategorie zum Durchsuchen wählen:",
+        "get_pick_entry": "📁 {category} — {count} Einträge. Wähle einen:",
+        "get_empty_base": "📭 Wissensbasis ist leer. Schick mir zuerst einen Link.",
+        "get_category_empty": "📭 Noch keine Einträge in dieser Kategorie.",
+        "entry_btn_md_file": "📄 Zusammenfassung (.md)",
+        "entry_btn_raw_file": "📜 Vollständige Quelle",
         "entry_no_raw_text": "Keine Rohtext-Datei für diesen Eintrag.",
         "entry_file_caption": "📎 {name}",
     },
@@ -1061,20 +1073,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Type de contenu inconnu : {source_type}",
         "pipeline_err_summarize_failed": "Impossible de produire un résumé pour : {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Utilisation : /get <entry_id>\n\n"
-            "Trouve l'entry_id dans /recent ou /search — c'est le code "
-            "à 8 caractères entre crochets près de chaque entrée."
+            "Utilisation :\n"
+            "• /get — parcourir par catégorie\n"
+            "• /get <entry_id> — ouvrir une entrée par son ID à 8 caractères"
         ),
         "get_not_found": (
             "⚠️ Entrée `{entry_id}` introuvable. Lance /recent ou "
             "/search pour voir les IDs actuels."
         ),
         "get_read_failed": "⚠️ Impossible de lire le fichier depuis le disque.",
-        "recent_get_hint": "💡 /get <id> — texte complet + téléchargements",
-        "entry_btn_md_file": "📎 Télécharger .md",
-        "entry_btn_raw_file": "📎 Texte brut",
+        "recent_get_hint": "💡 /get — parcourir par catégorie ; /get <id> — ouvrir une entrée précise",
+        "get_pick_category": "📂 Choisis une catégorie à parcourir :",
+        "get_pick_entry": "📁 {category} — {count} entrées. Choisis :",
+        "get_empty_base": "📭 Base de connaissances vide. Envoie-moi d'abord un lien.",
+        "get_category_empty": "📭 Aucune entrée dans cette catégorie pour l'instant.",
+        "entry_btn_md_file": "📄 Résumé (.md)",
+        "entry_btn_raw_file": "📜 Source complète",
         "entry_no_raw_text": "Pas de fichier texte brut pour cette entrée.",
         "entry_file_caption": "📎 {name}",
     },
@@ -1306,20 +1322,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Tipo de contenido desconocido: {source_type}",
         "pipeline_err_summarize_failed": "No se pudo generar un resumen para: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Uso: /get <entry_id>\n\n"
-            "Encuentra el entry_id en /recent o /search — es el código "
-            "de 8 caracteres entre corchetes junto a cada entrada."
+            "Uso:\n"
+            "• /get — explorar por categoría\n"
+            "• /get <entry_id> — abrir una entrada por su ID de 8 caracteres"
         ),
         "get_not_found": (
             "⚠️ Entrada `{entry_id}` no encontrada. Ejecuta /recent o "
             "/search para ver los IDs actuales."
         ),
         "get_read_failed": "⚠️ No se pudo leer el archivo de la entrada.",
-        "recent_get_hint": "💡 /get <id> — texto completo + descargas",
-        "entry_btn_md_file": "📎 Descargar .md",
-        "entry_btn_raw_file": "📎 Texto en bruto",
+        "recent_get_hint": "💡 /get — explorar por categoría; /get <id> — abrir una entrada concreta",
+        "get_pick_category": "📂 Elige una categoría para explorar:",
+        "get_pick_entry": "📁 {category} — {count} entradas. Elige una:",
+        "get_empty_base": "📭 La base de conocimientos está vacía. Envíame un enlace primero.",
+        "get_category_empty": "📭 Aún no hay entradas en esta categoría.",
+        "entry_btn_md_file": "📄 Resumen (.md)",
+        "entry_btn_raw_file": "📜 Fuente completa",
         "entry_no_raw_text": "No hay archivo de texto en bruto para esta entrada.",
         "entry_file_caption": "📎 {name}",
     },
@@ -1549,20 +1569,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Tipo di contenuto sconosciuto: {source_type}",
         "pipeline_err_summarize_failed": "Impossibile produrre un riepilogo per: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Uso: /get <entry_id>\n\n"
-            "Trovi l'entry_id in /recent o /search — è il codice di "
-            "8 caratteri tra parentesi quadre accanto a ogni voce."
+            "Uso:\n"
+            "• /get — sfoglia per categoria\n"
+            "• /get <entry_id> — apri una voce tramite ID di 8 caratteri"
         ),
         "get_not_found": (
             "⚠️ Voce `{entry_id}` non trovata. Esegui /recent o /search "
             "per vedere gli ID attuali."
         ),
         "get_read_failed": "⚠️ Impossibile leggere il file della voce.",
-        "recent_get_hint": "💡 /get <id> — testo completo + download file",
-        "entry_btn_md_file": "📎 Scarica .md",
-        "entry_btn_raw_file": "📎 Testo grezzo",
+        "recent_get_hint": "💡 /get — sfoglia per categoria; /get <id> — apri una voce specifica",
+        "get_pick_category": "📂 Scegli una categoria da sfogliare:",
+        "get_pick_entry": "📁 {category} — {count} voci. Scegline una:",
+        "get_empty_base": "📭 La base di conoscenza è vuota. Mandami prima un link.",
+        "get_category_empty": "📭 Nessuna voce in questa categoria al momento.",
+        "entry_btn_md_file": "📄 Riassunto (.md)",
+        "entry_btn_raw_file": "📜 Fonte completa",
         "entry_no_raw_text": "Nessun file di testo grezzo per questa voce.",
         "entry_file_caption": "📎 {name}",
     },
@@ -1792,20 +1816,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "Tipo de conteúdo desconhecido: {source_type}",
         "pipeline_err_summarize_failed": "Não foi possível gerar um resumo para: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "Uso: /get <entry_id>\n\n"
-            "Encontre o entry_id em /recent ou /search — é o código de "
-            "8 caracteres entre colchetes ao lado de cada entrada."
+            "Uso:\n"
+            "• /get — navegar por categoria\n"
+            "• /get <entry_id> — abrir uma entrada pelo ID de 8 caracteres"
         ),
         "get_not_found": (
             "⚠️ Entrada `{entry_id}` não encontrada. Execute /recent ou "
             "/search para ver os IDs atuais."
         ),
         "get_read_failed": "⚠️ Falha ao ler o arquivo da entrada.",
-        "recent_get_hint": "💡 /get <id> — texto completo + downloads",
-        "entry_btn_md_file": "📎 Baixar .md",
-        "entry_btn_raw_file": "📎 Texto bruto",
+        "recent_get_hint": "💡 /get — navegar por categoria; /get <id> — abrir uma entrada específica",
+        "get_pick_category": "📂 Escolha uma categoria para navegar:",
+        "get_pick_entry": "📁 {category} — {count} entradas. Escolha uma:",
+        "get_empty_base": "📭 Base de conhecimento vazia. Envie um link primeiro.",
+        "get_category_empty": "📭 Ainda não há entradas nesta categoria.",
+        "entry_btn_md_file": "📄 Resumo (.md)",
+        "entry_btn_raw_file": "📜 Fonte completa",
         "entry_no_raw_text": "Sem arquivo de texto bruto para esta entrada.",
         "entry_file_caption": "📎 {name}",
     },
@@ -2022,19 +2050,23 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "未知的内容类型：{source_type}",
         "pipeline_err_summarize_failed": "无法为以下内容生成摘要：{title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "用法：/get <entry_id>\n\n"
-            "从 /recent 或 /search 获取 entry_id — 它是每个条目旁"
-            "方括号中的 8 个字符代码。"
+            "用法：\n"
+            "• /get — 按分类浏览\n"
+            "• /get <entry_id> — 通过 8 位 ID 打开特定条目"
         ),
         "get_not_found": (
             "⚠️ 找不到条目 `{entry_id}`。运行 /recent 或 /search 查看当前 ID。"
         ),
         "get_read_failed": "⚠️ 无法从磁盘读取条目文件。",
-        "recent_get_hint": "💡 /get <id> — 完整文本 + 文件下载",
-        "entry_btn_md_file": "📎 下载 .md",
-        "entry_btn_raw_file": "📎 原始文本",
+        "recent_get_hint": "💡 /get — 按分类浏览；/get <id> — 直接打开指定条目",
+        "get_pick_category": "📂 选择要浏览的分类：",
+        "get_pick_entry": "📁 {category} — {count} 条。选择一项：",
+        "get_empty_base": "📭 知识库为空。请先发我一条链接。",
+        "get_category_empty": "📭 这个分类暂时还没有条目。",
+        "entry_btn_md_file": "📄 摘要 (.md)",
+        "entry_btn_raw_file": "📜 完整来源",
         "entry_no_raw_text": "该条目没有原始文本文件。",
         "entry_file_caption": "📎 {name}",
     },
@@ -2259,20 +2291,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "不明なコンテンツタイプ：{source_type}",
         "pipeline_err_summarize_failed": "以下の要約を作成できませんでした：{title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "使用法：/get <entry_id>\n\n"
-            "entry_id は /recent または /search で確認できます — "
-            "各エントリの横の角括弧内にある 8 文字のコードです。"
+            "使用法：\n"
+            "• /get — カテゴリで閲覧\n"
+            "• /get <entry_id> — 8 文字の ID で特定のエントリを開く"
         ),
         "get_not_found": (
             "⚠️ エントリ `{entry_id}` が見つかりません。"
             "/recent または /search で現在の ID を確認してください。"
         ),
         "get_read_failed": "⚠️ ディスクからエントリファイルを読み込めませんでした。",
-        "recent_get_hint": "💡 /get <id> — 全文 + ファイルダウンロード",
-        "entry_btn_md_file": "📎 .md をダウンロード",
-        "entry_btn_raw_file": "📎 生テキスト",
+        "recent_get_hint": "💡 /get — カテゴリで閲覧; /get <id> — 特定のエントリを開く",
+        "get_pick_category": "📂 閲覧するカテゴリを選択:",
+        "get_pick_entry": "📁 {category} — {count} 件。選択してください:",
+        "get_empty_base": "📭 ナレッジベースは空です。まずリンクを送ってください。",
+        "get_category_empty": "📭 このカテゴリにはまだエントリがありません。",
+        "entry_btn_md_file": "📄 要約 (.md)",
+        "entry_btn_raw_file": "📜 完全なソース",
         "entry_no_raw_text": "このエントリには生テキストファイルがありません。",
         "entry_file_caption": "📎 {name}",
     },
@@ -2497,20 +2533,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "pipeline_err_unknown_source_type": "نوع محتوى غير معروف: {source_type}",
         "pipeline_err_summarize_failed": "تعذّر توليد ملخص لـ: {title}",
 
-        # ── Phase 7.9 ──
+        # ── Phase 7.9 / Phase 8 ──
         "get_usage": (
-            "الاستخدام: /get <entry_id>\n\n"
-            "احصل على entry_id من /recent أو /search — هو الرمز المكوّن "
-            "من 8 أحرف بين قوسين مربعين بجانب كل مدخل."
+            "الاستخدام:\n"
+            "• /get — التصفح حسب الفئة\n"
+            "• /get <entry_id> — فتح مدخل عبر معرّف من 8 أحرف"
         ),
         "get_not_found": (
             "⚠️ المدخل `{entry_id}` غير موجود. شغّل /recent أو /search "
             "لرؤية المعرّفات الحالية."
         ),
         "get_read_failed": "⚠️ فشل قراءة ملف المدخل من القرص.",
-        "recent_get_hint": "💡 /get <id> — النص الكامل + تنزيل الملفات",
-        "entry_btn_md_file": "📎 تنزيل .md",
-        "entry_btn_raw_file": "📎 النص الخام",
+        "recent_get_hint": "💡 /get — التصفح حسب الفئة؛ /get <id> — فتح مدخل محدد",
+        "get_pick_category": "📂 اختر فئة للتصفح:",
+        "get_pick_entry": "📁 {category} — {count} مدخل. اختر واحداً:",
+        "get_empty_base": "📭 قاعدة المعرفة فارغة. أرسل لي رابطاً أولاً.",
+        "get_category_empty": "📭 لا توجد مداخل في هذه الفئة بعد.",
+        "entry_btn_md_file": "📄 الملخص (.md)",
+        "entry_btn_raw_file": "📜 المصدر الكامل",
         "entry_no_raw_text": "لا يوجد ملف نص خام لهذا المدخل.",
         "entry_file_caption": "📎 {name}",
     },

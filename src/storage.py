@@ -542,6 +542,17 @@ def get_recent_entries(count: int = 5) -> list[dict[str, str]]:
     return entries[:count]
 
 
+def get_entries_in_category(slug: str, limit: int = 20) -> list[dict[str, str]]:
+    """Return up to *limit* entries in the given category, newest first.
+
+    Reuses the 60-second cache in :func:`_get_all_entries`.
+    Returns an empty list for unknown slugs.
+    """
+    entries = [e for e in _get_all_entries() if e.get("category") == slug]
+    entries.sort(key=lambda e: e.get("date", ""), reverse=True)
+    return entries[:limit]
+
+
 def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
     """Find relevant entries for a free-form question.
 

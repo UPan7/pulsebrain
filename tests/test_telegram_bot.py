@@ -2040,8 +2040,9 @@ async def test_language_roundtrip_ru_to_en_to_ru(tmp_knowledge_dir):
 
 
 @pytest.mark.asyncio
-async def test_cmd_get_usage_when_no_args(tmp_knowledge_dir):
-    """/get with no args → usage message, no file lookup."""
+async def test_cmd_get_no_args_empty_base_shows_helpful_message(tmp_knowledge_dir):
+    """/get with no args and nothing in the knowledge base → empty-base
+    reply, no keyboard."""
     from src.profile import init_profile
     from src.telegram_bot import cmd_get
 
@@ -2051,8 +2052,37 @@ async def test_cmd_get_usage_when_no_args(tmp_knowledge_dir):
     with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
         await cmd_get(update, ctx)
 
-    text = update.message.reply_text.call_args[0][0]
-    assert "Usage" in text or "/get" in text
+    call = update.message.reply_text.call_args
+    text = call[0][0]
+    assert "empty" in text.lower() or "📭" in text
+    assert call.kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_no_args_shows_categories_list(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """/get with no args + entries present → category picker keyboard."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, save_entry
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    call = update.message.reply_text.call_args
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 1
+    assert "ai-agents" in buttons[0].text
+    assert "(1)" in buttons[0].text
+    assert buttons[0].callback_data == "getcat:ai-agents"
 
 
 @pytest.mark.asyncio
@@ -2251,6 +2281,210 @@ async def test_callback_entfile_unknown_id(tmp_knowledge_dir):
     update.callback_query.message.reply_text.assert_called()
     text = update.callback_query.message.reply_text.call_args[0][0]
     assert "cafebabe" in text
+
+
+# ── Phase 8: /get browser flow + multi-part rendering ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_get_direct_id_still_works(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """Backward compat: /get <id> should still open the entry directly."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[entry_id(path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    call = update.message.reply_text.call_args
+    text = call[0][0]
+    assert sample_entry_kwargs["title"] in text
+    # Has the download keyboard
+    assert call.kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_callback_getcat_shows_entries_in_category(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """getcat:<slug> → edits the category list into a 1-per-row file list."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    path = save_entry(**sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache()
+
+    update = _make_callback_update(data="getcat:ai-agents")
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.edit_message_text.assert_called_once()
+    call = update.callback_query.edit_message_text.call_args
+    header = call[0][0]
+    assert "ai-agents" in header
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 1
+    assert sample_entry_kwargs["title"] in buttons[0].text
+    assert buttons[0].callback_data == f"getent:{entry_id(path)}"
+
+
+@pytest.mark.asyncio
+async def test_callback_getcat_empty_category_message(tmp_knowledge_dir):
+    """getcat:<unknown> → 'no entries' reply, no keyboard edit."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    update = _make_callback_update(data="getcat:ghost-category")
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.edit_message_text.assert_not_called()
+    update.callback_query.message.reply_text.assert_called_once()
+    text = update.callback_query.message.reply_text.call_args[0][0]
+    assert "📭" in text or "no" in text.lower() or "нет" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_callback_getent_shows_detail_with_buttons(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """getent:<id> → replies with detail body + download keyboard."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    path = save_entry(
+        **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
+        update_index=False,
+    )
+    _invalidate_entry_cache()
+
+    update = _make_callback_update(data=f"getent:{entry_id(path)}")
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_text.assert_called_once()
+    call = update.callback_query.message.reply_text.call_args
+    text = call[0][0]
+    assert sample_entry_kwargs["title"] in text
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 2
+    assert any("md" in b.callback_data.lower() for b in buttons)
+    assert any("raw" in b.callback_data.lower() for b in buttons)
+
+
+@pytest.mark.asyncio
+async def test_callback_getent_unknown_id_error_message(tmp_knowledge_dir):
+    """getent:<missing> → not-found text, no detail."""
+    from src.profile import init_profile
+    from src.telegram_bot import callback_handler
+
+    init_profile()
+    update = _make_callback_update(data="getent:cafebabe")
+    ctx = _make_context()
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await callback_handler(update, ctx)
+
+    update.callback_query.message.reply_text.assert_called_once()
+    text = update.callback_query.message.reply_text.call_args[0][0]
+    assert "cafebabe" in text
+
+
+# ── _split_long_message unit tests ────────────────────────────────────────
+
+
+def test_split_long_message_single_chunk():
+    from src.telegram_bot import _split_long_message
+
+    assert _split_long_message("short text", limit=100) == ["short text"]
+
+
+def test_split_long_message_paragraph_boundary():
+    from src.telegram_bot import _split_long_message
+
+    text = "A" * 40 + "\n\n" + "B" * 40 + "\n\n" + "C" * 40
+    chunks = _split_long_message(text, limit=90)
+    assert len(chunks) >= 2
+    assert chunks[0].startswith("A")
+    assert all(len(c) <= 90 for c in chunks)
+    # Recombined content preserves all payload characters (whitespace
+    # between chunks may collapse, so we check per-chunk presence).
+    assert any("A" * 40 in c for c in chunks)
+    assert any("B" * 40 in c for c in chunks)
+    assert any("C" * 40 in c for c in chunks)
+
+
+def test_split_long_message_line_boundary_fallback():
+    from src.telegram_bot import _split_long_message
+
+    # No paragraph breaks, just line breaks
+    text = "line-A" * 20 + "\n" + "line-B" * 20
+    chunks = _split_long_message(text, limit=80)
+    assert len(chunks) >= 2
+    assert all(len(c) <= 80 for c in chunks)
+
+
+def test_split_long_message_hard_cut_fallback():
+    from src.telegram_bot import _split_long_message
+
+    # One long line with no breaks — force the hard-cut fallback.
+    text = "x" * 500
+    chunks = _split_long_message(text, limit=100)
+    assert len(chunks) == 5
+    assert all(len(c) <= 100 for c in chunks)
+    assert "".join(chunks) == text
+
+
+@pytest.mark.asyncio
+async def test_long_summary_sends_multipart_with_numbering(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    """A summary longer than 4096 chars is split into (1/N) … (N/N)
+    messages, and only the final message carries the keyboard."""
+    from src.profile import init_profile
+    from src.storage import _invalidate_entry_cache, entry_id, save_entry
+    from src.telegram_bot import cmd_get
+
+    init_profile()
+    # ~9 KB of detailed notes → forces at least 2 chunks after wrapping
+    big_notes = "\n\n".join([f"Paragraph {i} " + ("x" * 200) for i in range(40)])
+    path = save_entry(
+        **{**sample_entry_kwargs, "detailed_notes": big_notes},
+        update_index=False,
+    )
+    _invalidate_entry_cache()
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=[entry_id(path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+        await cmd_get(update, ctx)
+
+    calls = update.message.reply_text.call_args_list
+    assert len(calls) >= 2
+    first_text = calls[0][0][0]
+    last_text = calls[-1][0][0]
+    assert first_text.startswith(f"(1/{len(calls)}) ")
+    assert last_text.startswith(f"({len(calls)}/{len(calls)}) ")
+    # Keyboard only on the last chunk
+    assert calls[0].kwargs.get("reply_markup") is None
+    assert calls[-1].kwargs.get("reply_markup") is not None
 
 
 @pytest.mark.asyncio

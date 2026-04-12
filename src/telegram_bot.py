@@ -52,6 +52,7 @@ from src.profile import get_language, profile_exists
 from src.router import SourceType, detect_source_type
 from src.storage import (
     find_entry_by_id,
+    get_entries_in_category,
     get_recent_entries,
     get_source_text_path,
     get_stats,
@@ -76,6 +77,39 @@ def _truncate_message(text: str, limit: int = _TELEGRAM_MSG_LIMIT) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def _split_long_message(
+    text: str, limit: int = _TELEGRAM_MSG_LIMIT - 20
+) -> list[str]:
+    """Split *text* into chunks ≤ *limit*, preferring paragraph boundaries.
+
+    Used for /get detail messages whose bodies can exceed Telegram's
+    4096-char cap (long lecture summaries etc.). Splitting order:
+
+    1. Paragraph break (``\\n\\n``) found before *limit*
+    2. Line break (``\\n``) found before *limit*
+    3. Hard cut at *limit* as a last resort
+
+    The default *limit* leaves ~20 chars of headroom for a ``(i/N) ``
+    prefix the caller may prepend.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        split_at = remaining.rfind("\n\n", 0, limit)
+        if split_at == -1:
+            split_at = remaining.rfind("\n", 0, limit)
+        if split_at == -1 or split_at == 0:
+            split_at = limit
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
 
 
 # ── Content-type-agnostic pending rendering ────────────────────────────────
@@ -976,24 +1010,121 @@ def _entry_files_keyboard(entry_data_id: str, has_raw: bool) -> InlineKeyboardMa
     return InlineKeyboardMarkup([row])
 
 
+def _categories_browse_keyboard(
+    by_category: dict[str, int],
+) -> InlineKeyboardMarkup:
+    """Build a 2-column keyboard of categories with entry counts.
+
+    Used by ``/get`` (no args) to open the browser flow. Tapping a button
+    fires ``getcat:{slug}``.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for slug, count in by_category.items():
+        row.append(
+            InlineKeyboardButton(
+                f"{slug} ({count})",
+                callback_data=f"getcat:{slug}",
+            )
+        )
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
+def _entries_browse_keyboard(
+    entries: list[dict[str, str]],
+) -> InlineKeyboardMarkup:
+    """Build a 1-per-row keyboard of entry titles.
+
+    Used by the ``getcat:*`` callback — tapping a button fires
+    ``getent:{entry_id}``.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    for entry in entries:
+        title = entry.get("title", "?") or "?"
+        label = (title[:57] + "…") if len(title) > 60 else title
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"getent:{entry['id']}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+async def _send_categories_list(update: Update, lang: str) -> None:
+    """Open the /get browser: reply with a category picker keyboard."""
+    stats = get_stats()
+    by_category = stats.get("by_category") or {}
+    if not by_category:
+        await update.message.reply_text(t("get_empty_base", lang))
+        return
+    await update.message.reply_text(
+        t("get_pick_category", lang),
+        reply_markup=_categories_browse_keyboard(by_category),
+    )
+
+
+async def _send_entry_detail(
+    send_reply: Any, entry: dict[str, str], lang: str
+) -> None:
+    """Render an entry's detail view and send it via *send_reply*.
+
+    Long summaries are split into multiple messages with ``(i/N)``
+    numbering. The final chunk carries the download keyboard.
+    ``send_reply`` is a coroutine-returning callable such as
+    ``update.message.reply_text`` or ``query.message.reply_text``.
+    """
+    try:
+        raw_md = await asyncio.to_thread(read_entry_markdown, entry["path"])
+    except OSError as exc:
+        logger.warning("Failed to read %s: %s", entry["path"], exc)
+        await send_reply(t("get_read_failed", lang))
+        return
+
+    body = _strip_frontmatter(raw_md).strip()
+    text = _render_entry_detail(entry, body)
+
+    source_path = get_source_text_path(entry["path"])
+    has_raw = source_path.exists()
+    keyboard = _entry_files_keyboard(entry["id"], has_raw)
+
+    chunks = _split_long_message(text)
+    total = len(chunks)
+    for index, chunk in enumerate(chunks):
+        prefix = f"({index + 1}/{total}) " if total > 1 else ""
+        is_last = index == total - 1
+        await send_reply(
+            prefix + chunk,
+            reply_markup=keyboard if is_last else None,
+            disable_web_page_preview=True,
+        )
+
+
 async def cmd_get(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Pull the full markdown content + file-download buttons for an entry
-    by its short ID (as shown in /recent and /search output).
+    """Browse entries or jump to a specific one by its 8-char ID.
 
-    Usage: /get <entry_id>
+    * ``/get`` (no args) opens a category-picker keyboard. Tapping a
+      category shows the entries inside it; tapping an entry opens its
+      detail view with download buttons.
+    * ``/get <entry_id>`` opens that entry directly (backward-compat
+      shortcut for IDs copied from ``/recent`` or ``/search``).
 
-    The entry ID is the 8-char prefix printed in square brackets next to
-    each item in /recent and /search output. This command reads the .md
-    file from disk and sends it back as a message (truncated to 4096
-    chars if needed) together with inline buttons to download the .md
-    file and the raw transcript/article sidecar as Telegram documents.
+    Long detail views are split into multiple sequential messages with
+    ``(i/N)`` numbering so nothing is truncated.
     """
     if not _authorized(update):
         return
     lang = get_language()
     args = context.args or []
     if not args:
-        await update.message.reply_text(t("get_usage", lang))
+        await _send_categories_list(update, lang)
         return
 
     wanted_id = args[0].strip().lower()
@@ -1002,24 +1133,7 @@ async def cmd_get(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(t("get_not_found", lang, entry_id=wanted_id))
         return
 
-    try:
-        raw_md = await asyncio.to_thread(read_entry_markdown, entry["path"])
-    except OSError as exc:
-        logger.warning("Failed to read %s: %s", entry["path"], exc)
-        await update.message.reply_text(t("get_read_failed", lang))
-        return
-
-    body = _strip_frontmatter(raw_md).strip()
-    text = _render_entry_detail(entry, body)
-
-    source_path = get_source_text_path(entry["path"])
-    has_raw = source_path.exists()
-
-    await update.message.reply_text(
-        _truncate_message(text),
-        reply_markup=_entry_files_keyboard(entry["id"], has_raw),
-        disable_web_page_preview=True,
-    )
+    await _send_entry_detail(update.message.reply_text, entry, lang)
 
 
 # ── Link drop handler ────────────────────────────────────────────────────────
@@ -1446,6 +1560,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     elif data == "fetch_skip":
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(t("fetch_skipped", lang))
+
+    # ── /get browser flow ───────────────────────────────────────────────────
+    elif data.startswith("getcat:"):
+        slug = data.split(":", 1)[1]
+        entries = get_entries_in_category(slug, limit=20)
+        if not entries:
+            await query.message.reply_text(t("get_category_empty", lang))
+            return
+        await query.edit_message_text(
+            t("get_pick_entry", lang, category=slug, count=len(entries)),
+            reply_markup=_entries_browse_keyboard(entries),
+        )
+        return
+
+    elif data.startswith("getent:"):
+        wanted_id = data.split(":", 1)[1]
+        entry = find_entry_by_id(wanted_id)
+        if entry is None:
+            await query.message.reply_text(
+                t("get_not_found", lang, entry_id=wanted_id)
+            )
+            return
+        await _send_entry_detail(query.message.reply_text, entry, lang)
+        return
 
     # ── Entry file download (/get flow) ─────────────────────────────────────
     elif data.startswith("entfile:"):

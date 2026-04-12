@@ -519,6 +519,56 @@ def test_get_recent_entries_respects_count(tmp_knowledge_dir, sample_entry_kwarg
     assert len(get_recent_entries(2)) == 2
 
 
+def test_get_entries_in_category_filters_and_sorts(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    from src.storage import save_entry, get_entries_in_category
+
+    save_entry(
+        **{**sample_entry_kwargs, "title": "AI Old",
+           "category": "ai-agents", "date_str": "2020-01-01"},
+        update_index=False,
+    )
+    save_entry(
+        **{**sample_entry_kwargs, "title": "AI New",
+           "category": "ai-agents", "date_str": "2025-06-15"},
+        update_index=False,
+    )
+    save_entry(
+        **{**sample_entry_kwargs, "title": "DevOps",
+           "category": "devops", "date_str": "2025-06-15"},
+        update_index=False,
+    )
+
+    entries = get_entries_in_category("ai-agents")
+    assert [e["title"] for e in entries] == ["AI New", "AI Old"]
+    assert all(e.get("category") == "ai-agents" for e in entries)
+
+
+def test_get_entries_in_category_caps_at_limit(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    from src.storage import save_entry, get_entries_in_category
+
+    for i in range(5):
+        save_entry(
+            **{**sample_entry_kwargs, "title": f"E{i}", "category": "ai-agents"},
+            update_index=False,
+        )
+
+    assert len(get_entries_in_category("ai-agents", limit=2)) == 2
+
+
+def test_get_entries_in_category_unknown_slug_returns_empty(
+    tmp_knowledge_dir, sample_entry_kwargs
+):
+    from src.storage import save_entry, get_entries_in_category
+
+    save_entry(**sample_entry_kwargs, update_index=False)
+
+    assert get_entries_in_category("nonexistent-slug") == []
+
+
 def test_get_stats_top_sources_ordering(tmp_knowledge_dir, sample_entry_kwargs):
     from src.storage import save_entry, get_stats
 

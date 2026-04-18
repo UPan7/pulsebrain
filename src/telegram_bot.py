@@ -997,23 +997,26 @@ def _render_entry_detail(entry: dict[str, Any], body: str) -> str:
     return "\n".join(lines)
 
 
-def _entry_files_keyboard(entry_data_id: str, has_raw: bool) -> InlineKeyboardMarkup:
-    """Build the [📎 .md] [📎 raw] keyboard shown under a /get response."""
+def _entry_files_keyboard(entry_data_id: str) -> InlineKeyboardMarkup:
+    """Build the [📄 Summary] [📜 Full source] keyboard under a /get response.
+
+    Both buttons are always shown. If the raw-text sidecar doesn't exist
+    on disk, the ``entfile:raw`` callback handler replies with a helpful
+    "no raw text" message instead of sending a document.
+    """
     lang = get_language()
-    row = [
-        InlineKeyboardButton(
-            t("entry_btn_md_file", lang),
-            callback_data=f"entfile:md:{entry_data_id}",
-        ),
-    ]
-    if has_raw:
-        row.append(
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                t("entry_btn_md_file", lang),
+                callback_data=f"entfile:md:{entry_data_id}",
+            ),
             InlineKeyboardButton(
                 t("entry_btn_raw_file", lang),
                 callback_data=f"entfile:raw:{entry_data_id}",
-            )
-        )
-    return InlineKeyboardMarkup([row])
+            ),
+        ]
+    ])
 
 
 def _categories_browse_keyboard(
@@ -1097,9 +1100,7 @@ async def _send_entry_detail(
     body = _strip_frontmatter(raw_md).strip()
     text = _render_entry_detail(entry, body)
 
-    source_path = get_source_text_path(entry["path"])
-    has_raw = source_path.exists()
-    keyboard = _entry_files_keyboard(entry["id"], has_raw)
+    keyboard = _entry_files_keyboard(entry["id"])
 
     chunks = _split_long_message(text)
     total = len(chunks)

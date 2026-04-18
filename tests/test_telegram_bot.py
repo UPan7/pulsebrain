@@ -2146,10 +2146,11 @@ async def test_cmd_get_returns_body_with_download_buttons(
 
 
 @pytest.mark.asyncio
-async def test_cmd_get_keyboard_has_no_raw_button_without_sidecar(
+async def test_cmd_get_keyboard_always_shows_both_buttons(
     tmp_knowledge_dir, sample_entry_kwargs
 ):
-    """Entry without raw_text → only the [md] button is shown."""
+    """Both [summary] and [full source] buttons are always shown, even
+    when the raw-text sidecar doesn't exist on disk."""
     from src.profile import init_profile
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_get
@@ -2166,8 +2167,9 @@ async def test_cmd_get_keyboard_has_no_raw_button_without_sidecar(
     call = update.message.reply_text.call_args
     keyboard = call.kwargs["reply_markup"]
     buttons = [btn for row in keyboard.inline_keyboard for btn in row]
-    assert len(buttons) == 1
-    assert "md" in buttons[0].callback_data.lower()
+    assert len(buttons) == 2
+    assert any("md" in b.callback_data for b in buttons)
+    assert any("raw" in b.callback_data for b in buttons)
 
 
 def _make_callback_update_with_document(chat_id: int = 12345, data: str = ""):

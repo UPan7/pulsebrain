@@ -147,9 +147,13 @@ def _render_pending_message(entry: dict[str, Any]) -> str:
         f"{entry.get('category', '?')}{cat_marker}"
     )
 
+    source_url = entry.get("source_url", "")
+    url_line = f"🔗 {source_url}\n" if source_url else ""
+
     return (
         f"{icon} {title}\n"
-        f"{source_line}\n\n"
+        f"{source_line}\n"
+        f"{url_line}\n"
         f"📋 {t('pending_summary_label', lang)}:\n{bullets}\n\n"
         f"{cat_line}\n"
         f"🏷 {topics_str}\n"

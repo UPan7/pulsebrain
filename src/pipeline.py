@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from src.categorize import categorize_content
@@ -44,7 +45,11 @@ def _process_content(
         meta = get_video_metadata(video_id)
         title = meta["title"] or f"Video {video_id}"
         source_name = meta["channel"] or "Unknown"
-        date_str = upload_date or meta["upload_date"]
+        date_str = (
+            upload_date
+            or meta["upload_date"]
+            or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        )
 
         content = get_transcript(video_id)
         if not content:

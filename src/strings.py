@@ -323,7 +323,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/search чтобы увидеть актуальные ID."
         ),
         "get_read_failed": "⚠️ Не удалось прочитать файл записи с диска.",
-        "recent_get_hint": "💡 /get — браузер по категориям; /get <id> — сразу открыть запись",
+        "recent_get_hint": "💡 /get — браузер по категориям",
         "get_pick_category": "📂 Выбери категорию:",
         "get_pick_entry": "📁 {category} — записей: {count}. Выбери:",
         "get_empty_base": "📭 База знаний пуста. Кинь мне ссылку — и начнём.",
@@ -583,7 +583,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "see current IDs."
         ),
         "get_read_failed": "⚠️ Failed to read the entry file from disk.",
-        "recent_get_hint": "💡 /get — browse by category; /get <id> — jump to a specific entry",
+        "recent_get_hint": "💡 /get — browse by category",
         "get_pick_category": "📂 Pick a category to browse:",
         "get_pick_entry": "📁 {category} — {count} entries. Pick one:",
         "get_empty_base": "📭 Knowledge base is empty. Drop me a link first.",
@@ -834,7 +834,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/search für aktuelle IDs."
         ),
         "get_read_failed": "⚠️ Konnte die Eintragsdatei nicht von der Festplatte lesen.",
-        "recent_get_hint": "💡 /get — nach Kategorie durchsuchen; /get <id> — direkt zum Eintrag",
+        "recent_get_hint": "💡 /get — nach Kategorie durchsuchen",
         "get_pick_category": "📂 Kategorie zum Durchsuchen wählen:",
         "get_pick_entry": "📁 {category} — {count} Einträge. Wähle einen:",
         "get_empty_base": "📭 Wissensbasis ist leer. Schick mir zuerst einen Link.",
@@ -1084,7 +1084,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/search pour voir les IDs actuels."
         ),
         "get_read_failed": "⚠️ Impossible de lire le fichier depuis le disque.",
-        "recent_get_hint": "💡 /get — parcourir par catégorie ; /get <id> — ouvrir une entrée précise",
+        "recent_get_hint": "💡 /get — parcourir par catégorie",
         "get_pick_category": "📂 Choisis une catégorie à parcourir :",
         "get_pick_entry": "📁 {category} — {count} entrées. Choisis :",
         "get_empty_base": "📭 Base de connaissances vide. Envoie-moi d'abord un lien.",
@@ -1333,7 +1333,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/search para ver los IDs actuales."
         ),
         "get_read_failed": "⚠️ No se pudo leer el archivo de la entrada.",
-        "recent_get_hint": "💡 /get — explorar por categoría; /get <id> — abrir una entrada concreta",
+        "recent_get_hint": "💡 /get — explorar por categoría",
         "get_pick_category": "📂 Elige una categoría para explorar:",
         "get_pick_entry": "📁 {category} — {count} entradas. Elige una:",
         "get_empty_base": "📭 La base de conocimientos está vacía. Envíame un enlace primero.",
@@ -1580,7 +1580,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "per vedere gli ID attuali."
         ),
         "get_read_failed": "⚠️ Impossibile leggere il file della voce.",
-        "recent_get_hint": "💡 /get — sfoglia per categoria; /get <id> — apri una voce specifica",
+        "recent_get_hint": "💡 /get — sfoglia per categoria",
         "get_pick_category": "📂 Scegli una categoria da sfogliare:",
         "get_pick_entry": "📁 {category} — {count} voci. Scegline una:",
         "get_empty_base": "📭 La base di conoscenza è vuota. Mandami prima un link.",
@@ -1827,7 +1827,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/search para ver os IDs atuais."
         ),
         "get_read_failed": "⚠️ Falha ao ler o arquivo da entrada.",
-        "recent_get_hint": "💡 /get — navegar por categoria; /get <id> — abrir uma entrada específica",
+        "recent_get_hint": "💡 /get — navegar por categoria",
         "get_pick_category": "📂 Escolha uma categoria para navegar:",
         "get_pick_entry": "📁 {category} — {count} entradas. Escolha uma:",
         "get_empty_base": "📭 Base de conhecimento vazia. Envie um link primeiro.",
@@ -2060,7 +2060,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "⚠️ 找不到条目 `{entry_id}`。运行 /recent 或 /search 查看当前 ID。"
         ),
         "get_read_failed": "⚠️ 无法从磁盘读取条目文件。",
-        "recent_get_hint": "💡 /get — 按分类浏览；/get <id> — 直接打开指定条目",
+        "recent_get_hint": "💡 /get — 按分类浏览",
         "get_pick_category": "📂 选择要浏览的分类：",
         "get_pick_entry": "📁 {category} — {count} 条。选择一项：",
         "get_empty_base": "📭 知识库为空。请先发我一条链接。",
@@ -2302,7 +2302,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "/recent または /search で現在の ID を確認してください。"
         ),
         "get_read_failed": "⚠️ ディスクからエントリファイルを読み込めませんでした。",
-        "recent_get_hint": "💡 /get — カテゴリで閲覧; /get <id> — 特定のエントリを開く",
+        "recent_get_hint": "💡 /get — カテゴリで閲覧",
         "get_pick_category": "📂 閲覧するカテゴリを選択:",
         "get_pick_entry": "📁 {category} — {count} 件。選択してください:",
         "get_empty_base": "📭 ナレッジベースは空です。まずリンクを送ってください。",
@@ -2544,7 +2544,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "لرؤية المعرّفات الحالية."
         ),
         "get_read_failed": "⚠️ فشل قراءة ملف المدخل من القرص.",
-        "recent_get_hint": "💡 /get — التصفح حسب الفئة؛ /get <id> — فتح مدخل محدد",
+        "recent_get_hint": "💡 /get — التصفح حسب الفئة",
         "get_pick_category": "📂 اختر فئة للتصفح:",
         "get_pick_entry": "📁 {category} — {count} مدخل. اختر واحداً:",
         "get_empty_base": "📭 قاعدة المعرفة فارغة. أرسل لي رابطاً أولاً.",

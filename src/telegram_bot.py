@@ -768,11 +768,12 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lines = [t("search_found_header", lang, count=len(results), query=query)]
     for i, r in enumerate(results[:5], 1):
         type_icon = "📺" if r.get("type") == "youtube_video" else "📰"
-        entry_id_prefix = f"[{r.get('id', '????????')}]"
+        url_line = f"   🔗 {r['source_url']}" if r.get("source_url") else ""
         lines.append(
-            f"{i}. {entry_id_prefix} {type_icon} {r.get('title', '?')}\n"
+            f"{i}. {type_icon} {r.get('title', '?')}\n"
             f"   {r.get('source', '?')} | {r.get('date', '?')} | "
             f"{r.get('category', '?')} | ⭐ {r.get('relevance', '?')}/10"
+            + (f"\n{url_line}" if url_line else "")
         )
         if r.get("summary_preview"):
             lines.append(f"   {r['summary_preview'][:100]}")
@@ -798,10 +799,9 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lines = [t("recent_header", lang, count=len(entries))]
     for e in entries:
         type_icon = "📺" if e.get("type") == "youtube_video" else "📰"
-        entry_id_prefix = f"[{e.get('id', '????????')}] "
         url_line = f"   🔗 {e['source_url']}" if e.get("source_url") else ""
         lines.append(
-            f"{entry_id_prefix}{type_icon} {e.get('title', '?')}\n"
+            f"{type_icon} {e.get('title', '?')}\n"
             f"   {e.get('source', '?')} | {e.get('date', '?')} | {e.get('category', '?')}"
             + (f"\n{url_line}" if url_line else "")
         )

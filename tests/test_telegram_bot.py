@@ -2488,10 +2488,10 @@ async def test_long_summary_sends_multipart_with_numbering(
 
 
 @pytest.mark.asyncio
-async def test_cmd_recent_shows_entry_id_prefix(
+async def test_cmd_recent_shows_title_and_url(
     tmp_knowledge_dir, sample_entry_kwargs
 ):
-    """Each /recent row now carries its 8-char ID in square brackets."""
+    """/recent shows title, source_url, and /get hint — no entry_id."""
     from src.profile import init_profile
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_recent
@@ -2506,6 +2506,10 @@ async def test_cmd_recent_shows_entry_id_prefix(
         await cmd_recent(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
-    assert f"[{entry_id(path)}]" in text
+    # Title and source URL present
+    assert sample_entry_kwargs["title"] in text
+    assert sample_entry_kwargs["source_url"] in text
+    # Entry ID is NOT displayed to the user
+    assert f"[{entry_id(path)}]" not in text
     # Discoverability hint for /get is appended
     assert "/get" in text

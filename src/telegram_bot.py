@@ -799,9 +799,11 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     for e in entries:
         type_icon = "📺" if e.get("type") == "youtube_video" else "📰"
         entry_id_prefix = f"[{e.get('id', '????????')}] "
+        url_line = f"   🔗 {e['source_url']}" if e.get("source_url") else ""
         lines.append(
             f"{entry_id_prefix}{type_icon} {e.get('title', '?')}\n"
             f"   {e.get('source', '?')} | {e.get('date', '?')} | {e.get('category', '?')}"
+            + (f"\n{url_line}" if url_line else "")
         )
     lines.append("")
     lines.append(t("recent_get_hint", lang))

@@ -1,15 +1,19 @@
-"""User profile — persona, learning targets, language, known stack.
+"""User profile — per-user persona, learning targets, language, known stack.
 
-The profile is the single source of truth for (a) what language the UI
-speaks and (b) what the user actually cares about when the summarize
-prompt scores relevance. It is seeded by the onboarding wizard
-(Phase 5.3), refinable by hand in data/user_profile.yaml, and read at
-scoring time by src.summarize. The bot itself never mutates the file
-except via explicit user action (wizard, /language, /profile).
+Each allowed ``chat_id`` has an independent profile on disk at
+``data/users/{chat_id}/profile.yaml``. The profile is the single source
+of truth for (a) what language the UI speaks for this user and
+(b) what the user actually cares about when the summarize prompt
+scores relevance.
+
+Profiles are seeded by the onboarding wizard, refinable by hand in the
+YAML, and read at scoring time by :mod:`src.summarize`. The bot itself
+never mutates the file except via explicit user action (wizard,
+``/language``, ``/profile``).
 
 Persistence uses the same thread-lock + atomic-write pattern as
-src.pending — safe for concurrent extractor threads and the bot's
-async tasks.
+:mod:`src.pending` — safe for concurrent extractor threads and the
+bot's async tasks. Caches and locks are partitioned per ``chat_id``.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from typing import Any
 
 import yaml
 
-from src.config import DATA_DIR, PROFILE_FILE
+from src.config import user_profile_file
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +42,21 @@ _DEFAULT_PROFILE: dict[str, Any] = {
     "not_interested_in": [],
 }
 
-# Keys we guarantee exist in any loaded profile. Missing keys are
-# back-filled from _DEFAULT_PROFILE on read so downstream code can
-# .get() without worrying about KeyError.
-_REQUIRED_KEYS: tuple[str, ...] = tuple(_DEFAULT_PROFILE.keys())
+
+# ── Per-user cache + lock registry ────────────────────────────────────────
+
+_profile_caches: dict[int, dict[str, Any]] = {}
+_profile_locks: dict[int, threading.Lock] = {}
+_profile_meta_lock = threading.Lock()
 
 
-# ── In-memory cache + lock ────────────────────────────────────────────────
-
-_profile_lock = threading.Lock()
-_profile_cache: dict[str, Any] | None = None
+def _lock_for(chat_id: int) -> threading.Lock:
+    with _profile_meta_lock:
+        lock = _profile_locks.get(chat_id)
+        if lock is None:
+            lock = threading.Lock()
+            _profile_locks[chat_id] = lock
+        return lock
 
 
 def _fresh_default() -> dict[str, Any]:
@@ -63,105 +72,104 @@ def _fresh_default() -> dict[str, Any]:
     }
 
 
-def _load_profile_from_disk() -> dict[str, Any]:
-    """Read user_profile.yaml from disk, backfilling any missing keys.
+def _load_from_disk(chat_id: int) -> dict[str, Any]:
+    """Read a user's profile.yaml, backfilling any missing keys.
 
-    Returns a fresh default profile on missing file or parse error.
+    Returns a fresh default on missing file or parse error.
     """
-    if not PROFILE_FILE.exists():
+    path = user_profile_file(chat_id)
+    if not path.exists():
         return _fresh_default()
     try:
-        with open(PROFILE_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to read %s: %s — using defaults.", PROFILE_FILE, exc)
+        logger.warning("Failed to read %s: %s — using defaults.", path, exc)
         return _fresh_default()
 
     if not isinstance(data, dict):
-        logger.warning("%s is not a mapping — using defaults.", PROFILE_FILE)
+        logger.warning("%s is not a mapping — using defaults.", path)
         return _fresh_default()
 
-    # Backfill missing keys with defaults so downstream code never KeyErrors.
     merged = _fresh_default()
     merged.update(data)
     return merged
 
 
-def _flush_profile() -> None:
-    """Atomically write _profile_cache to disk (caller must hold lock)."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp_path = PROFILE_FILE.with_suffix(".tmp")
+def _flush(chat_id: int) -> None:
+    """Atomically write a user's cached profile to disk (caller holds lock)."""
+    path = user_profile_file(chat_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
         yaml.dump(
-            _profile_cache,
+            _profile_caches[chat_id],
             f,
             allow_unicode=True,
             default_flow_style=False,
             sort_keys=False,
         )
-    os.replace(tmp_path, PROFILE_FILE)
+    os.replace(tmp_path, path)
 
 
 # ── Public API ────────────────────────────────────────────────────────────
 
 
-def init_profile() -> None:
-    """Load user_profile.yaml into memory. Call once at startup.
+def init_profile(chat_id: int) -> None:
+    """Load a user's profile.yaml into memory. Call once per chat_id at startup.
 
     If the file doesn't exist, a default profile is seeded in memory but
     NOT written to disk — the onboarding wizard owns first-run writing so
     we can distinguish "never onboarded" from "onboarded, all defaults".
     """
-    global _profile_cache
-    with _profile_lock:
-        _profile_cache = _load_profile_from_disk()
+    with _lock_for(chat_id):
+        _profile_caches[chat_id] = _load_from_disk(chat_id)
 
 
-def load_profile() -> dict[str, Any]:
-    """Return the current profile (cached if init_profile was called).
+def load_profile(chat_id: int) -> dict[str, Any]:
+    """Return the current profile for ``chat_id``.
 
-    Safe to call without init_profile — falls back to reading from disk
-    on demand, and to defaults if the file is missing. Returns a copy so
-    callers can't mutate the cache by accident.
+    Safe to call without :func:`init_profile` — falls back to reading from
+    disk on demand, and to defaults if the file is missing. Returns a
+    copy so callers can't mutate the cache by accident.
     """
-    with _profile_lock:
-        cache = _profile_cache if _profile_cache is not None else _load_profile_from_disk()
+    with _lock_for(chat_id):
+        cache = _profile_caches.get(chat_id)
+        if cache is None:
+            cache = _load_from_disk(chat_id)
+            _profile_caches[chat_id] = cache
         return dict(cache)
 
 
-def save_profile(profile: dict[str, Any]) -> None:
-    """Replace the profile with *profile* and persist it atomically.
+def save_profile(chat_id: int, profile: dict[str, Any]) -> None:
+    """Replace ``chat_id``'s profile with *profile* and persist it atomically.
 
-    Missing required keys are backfilled from defaults, so callers can
-    pass a partial dict (e.g. just {"language": "en"} wouldn't be useful
-    here, but {"language": "en", "persona": "..."} works without
-    collapsing the rest to None).
+    Missing required keys are backfilled from defaults so callers can
+    pass a partial dict.
     """
-    global _profile_cache
     merged = _fresh_default()
     merged.update(profile)
-    with _profile_lock:
-        _profile_cache = merged
-        _flush_profile()
-    logger.info("Profile saved (language=%s)", merged.get("language"))
+    with _lock_for(chat_id):
+        _profile_caches[chat_id] = merged
+        _flush(chat_id)
+    logger.info("Profile saved (chat_id=%s, language=%s)", chat_id, merged.get("language"))
 
 
-def profile_exists() -> bool:
-    """True if data/user_profile.yaml is on disk (i.e. user was onboarded)."""
-    return PROFILE_FILE.exists()
+def profile_exists(chat_id: int) -> bool:
+    """True if this user's profile.yaml is on disk (i.e. user was onboarded)."""
+    return user_profile_file(chat_id).exists()
 
 
-def get_language() -> str:
-    """Shortcut for load_profile()['language'] with a hard fallback to 'en'.
+def get_language(chat_id: int) -> str:
+    """Shortcut for load_profile(chat_id)['language'] with a hard 'en' fallback.
 
-    Returns one of src.strings.SUPPORTED_LANGS. Anything else (unset,
-    corrupted, an old 'ru' profile from before Phase 7) normalizes to
-    English. Old Russian profiles keep working — 'ru' is still in the
-    World 10 set — they just aren't the default anymore.
+    Returns one of :data:`src.strings.SUPPORTED_LANGS`. Anything else
+    (unset, corrupted, an old 'ru' profile from before Phase 7) normalizes
+    to English.
     """
     from src.strings import SUPPORTED_LANGS
     try:
-        lang = load_profile().get("language", "en")
+        lang = load_profile(chat_id).get("language", "en")
     except Exception:
         return "en"
     if lang not in SUPPORTED_LANGS:
@@ -181,19 +189,18 @@ _TOP_TOPICS = 10
 _REJECTED_TOPICS = 10
 
 
-def build_relevance_context() -> dict[str, Any]:
-    """Build the dynamic signal block for the summarize prompt.
+def build_relevance_context(chat_id: int) -> dict[str, Any]:
+    """Build the dynamic signal block for ``chat_id``'s summarize prompt.
 
-    Merges the static user profile with live stats from the knowledge
-    base (top categories, top topics, recent relevance average) plus
-    negative signal from the rejected log (what the user silently
-    dropped recently). Returns a single dict that src.summarize
-    injects into SUMMARIZE_PROMPT.
+    Merges the static per-user profile with live stats from that user's
+    knowledge base (top categories, top topics, recent relevance
+    average) plus negative signal from their rejected log. Returns a
+    single dict that :mod:`src.summarize` injects into
+    ``SUMMARIZE_PROMPT``.
 
-    Pure read-only — no LLM calls, no mutations. Reads via the cached
-    storage._get_all_entries (60s TTL) so repeat calls are cheap.
+    Pure read-only — no LLM calls, no mutations.
     """
-    profile = load_profile()
+    profile = load_profile(chat_id)
 
     top_categories: list[tuple[str, int]] = []
     top_topics: list[tuple[str, int]] = []
@@ -202,13 +209,12 @@ def build_relevance_context() -> dict[str, Any]:
     try:
         from src.storage import _get_all_entries
 
-        entries = list(_get_all_entries())
+        entries = list(_get_all_entries(chat_id))
     except Exception as exc:
         logger.warning("Failed to load entries for relevance context: %s", exc)
         entries = []
 
     if entries:
-        # Sort by date desc so "recent" means the last N accepted entries.
         entries_by_date = sorted(
             entries,
             key=lambda e: e.get("date", ""),
@@ -235,7 +241,6 @@ def build_relevance_context() -> dict[str, Any]:
             topic_counts.items(), key=lambda kv: kv[1], reverse=True
         )[:_TOP_TOPICS]
 
-        # Recent relevance average (defaults to neutral 5.0 for cold base)
         recent = entries_by_date[:_RECENT_APPROVED_WINDOW]
         scores: list[float] = []
         for e in recent:
@@ -246,16 +251,11 @@ def build_relevance_context() -> dict[str, Any]:
         if scores:
             recent_avg = round(sum(scores) / len(scores), 1)
 
-    # Negative signal: topics the user recently rejected. Pulled from the
-    # JSONL log written by Phase 2.0 so /rejected and scoring share a
-    # single source of truth.
     rejected_topics: list[str] = []
     try:
         from src.pending import read_rejected_log
 
-        records = read_rejected_log(limit=_REJECTED_TOPICS * 3)
-        # The log stores title, not topics — the best we can do without
-        # retrospective reparse is to pass a flat list of rejected titles.
+        records = read_rejected_log(chat_id, limit=_REJECTED_TOPICS * 3)
         for r in records:
             title = r.get("title", "").strip()
             if title and title not in rejected_topics:
@@ -281,8 +281,8 @@ def build_relevance_context() -> dict[str, Any]:
 
 
 def format_relevance_context(ctx: dict[str, Any]) -> str:
-    """Flatten the build_relevance_context dict into a prompt-ready
-    multi-line string. Used by src.summarize when rendering the
+    """Flatten the :func:`build_relevance_context` dict into a prompt-ready
+    multi-line string. Used by :mod:`src.summarize` when rendering the
     USER CONTEXT block.
     """
     lines: list[str] = ["USER CONTEXT:"]

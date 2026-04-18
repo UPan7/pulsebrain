@@ -1,4 +1,4 @@
-"""Shared fixtures for PulseBrain tests."""
+"""Shared fixtures for PulseBrain tests (multi-tenant)."""
 
 from __future__ import annotations
 
@@ -20,68 +20,113 @@ if "trafilatura" not in sys.modules:
     _tf.extract_metadata = lambda *a, **k: None
     sys.modules["trafilatura"] = _tf
 
-import asyncio
-import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 
+# Canonical chat_ids used across tests.
+CHAT_ID = 12345
+OTHER_CHAT_ID = 67890
+
+
 # ---------------------------------------------------------------------------
-# Filesystem isolation: redirect all config paths to tmp_path
+# Filesystem isolation: redirect DATA_DIR / KNOWLEDGE_DIR / USERS_DIR to tmp
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
+def chat_id() -> int:
+    """Primary chat_id for single-user-flavored tests."""
+    return CHAT_ID
+
+
+@pytest.fixture()
+def other_chat_id() -> int:
+    """Second chat_id for multi-tenant isolation tests."""
+    return OTHER_CHAT_ID
+
+
+@pytest.fixture()
 def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Redirect KNOWLEDGE_DIR, DATA_DIR, PROCESSED_FILE, CATEGORIES_FILE to tmp."""
+    """Redirect the root data/ and knowledge/ directories into tmp_path.
+
+    Per-user paths (``data/users/{chat_id}/...``, ``knowledge/{chat_id}/...``)
+    are derived from these at call time, so patching the roots is enough —
+    no need to patch each per-user path individually.
+    """
     knowledge = tmp_path / "knowledge"
     knowledge.mkdir()
     data = tmp_path / "data"
     data.mkdir()
-    processed = data / "processed.json"
-    pending = data / "pending.json"
-    rejected_log = data / "rejected_log.jsonl"
-    profile = data / "user_profile.yaml"
-    categories = data / "categories.yml"
-    channels = tmp_path / "channels.yml"
+    users = data / "users"
+    users.mkdir()
+    migration_marker = data / ".migrated_v1"
+    # Legacy paths (root of BASE_DIR / DATA_DIR) — tests that still
+    # reference them directly can use these tmp copies.
+    legacy_processed = data / "processed.json"
+    legacy_pending = data / "pending.json"
+    legacy_rejected = data / "rejected_log.jsonl"
+    legacy_profile = data / "user_profile.yaml"
+    legacy_categories = data / "categories.yml"
+    legacy_channels = tmp_path / "channels.yml"
 
-    targets = {
-        "KNOWLEDGE_DIR": knowledge,
-        "DATA_DIR": data,
-        "PROCESSED_FILE": processed,
-        "PENDING_FILE": pending,
-        "REJECTED_LOG_FILE": rejected_log,
-        "PROFILE_FILE": profile,
-        "CATEGORIES_FILE": categories,
-        "CHANNELS_FILE": channels,
-    }
-
-    # Patch on src.config AND every module that imported at load time
     import src.config
-    import src.storage
+    import src.migration
     import src.pending
     import src.profile
+    import src.storage
 
-    for attr, val in targets.items():
-        monkeypatch.setattr(src.config, attr, val)
-        if hasattr(src.storage, attr):
-            monkeypatch.setattr(src.storage, attr, val)
-        if hasattr(src.pending, attr):
-            monkeypatch.setattr(src.pending, attr, val)
-        if hasattr(src.profile, attr):
-            monkeypatch.setattr(src.profile, attr, val)
+    monkeypatch.setattr(src.config, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(src.config, "KNOWLEDGE_DIR", knowledge)
+    monkeypatch.setattr(src.config, "DATA_DIR", data)
+    monkeypatch.setattr(src.config, "USERS_DIR", users)
+    monkeypatch.setattr(src.config, "MIGRATION_MARKER_FILE", migration_marker)
+    monkeypatch.setattr(src.config, "LEGACY_PROCESSED_FILE", legacy_processed)
+    monkeypatch.setattr(src.config, "LEGACY_PENDING_FILE", legacy_pending)
+    monkeypatch.setattr(src.config, "LEGACY_REJECTED_LOG_FILE", legacy_rejected)
+    monkeypatch.setattr(src.config, "LEGACY_PROFILE_FILE", legacy_profile)
+    monkeypatch.setattr(src.config, "LEGACY_CATEGORIES_FILE", legacy_categories)
+    monkeypatch.setattr(src.config, "LEGACY_CHANNELS_FILE", legacy_channels)
 
-    # Reset storage caches so tests start clean
-    if hasattr(src.storage, "_processed_cache"):
-        monkeypatch.setattr(src.storage, "_processed_cache", None)
-    if hasattr(src.storage, "_entry_cache"):
-        monkeypatch.setattr(src.storage, "_entry_cache", None)
-    monkeypatch.setattr(src.pending, "_pending_cache", None)
-    monkeypatch.setattr(src.profile, "_profile_cache", None)
+    # Mirror the rebound paths on modules that imported them at load time.
+    for mod in (src.storage, src.pending, src.profile, src.migration):
+        if hasattr(mod, "KNOWLEDGE_DIR"):
+            monkeypatch.setattr(mod, "KNOWLEDGE_DIR", knowledge)
+
+    # src.migration imported every LEGACY_* and the marker at load time,
+    # so patching on src.config alone isn't enough — rebind the mirrors.
+    monkeypatch.setattr(src.migration, "DATA_DIR", data)
+    monkeypatch.setattr(src.migration, "MIGRATION_MARKER_FILE", migration_marker)
+    monkeypatch.setattr(src.migration, "LEGACY_PROCESSED_FILE", legacy_processed)
+    monkeypatch.setattr(src.migration, "LEGACY_PENDING_FILE", legacy_pending)
+    monkeypatch.setattr(src.migration, "LEGACY_REJECTED_LOG_FILE", legacy_rejected)
+    monkeypatch.setattr(src.migration, "LEGACY_PROFILE_FILE", legacy_profile)
+    monkeypatch.setattr(src.migration, "LEGACY_CATEGORIES_FILE", legacy_categories)
+    monkeypatch.setattr(src.migration, "LEGACY_CHANNELS_FILE", legacy_channels)
+
+    # Per-user helpers read these module globals via the closure, so just
+    # reset the caches so tests start clean.
+    monkeypatch.setattr(src.storage, "_processed_caches", {})
+    monkeypatch.setattr(src.storage, "_processed_locks", {})
+    monkeypatch.setattr(src.storage, "_entry_caches", {})
+    monkeypatch.setattr(src.pending, "_pending_caches", {})
+    monkeypatch.setattr(src.pending, "_pending_locks", {})
+    monkeypatch.setattr(src.profile, "_profile_caches", {})
+    monkeypatch.setattr(src.profile, "_profile_locks", {})
+    monkeypatch.setattr(src.config, "_categories_locks", {})
 
     return tmp_path
+
+
+@pytest.fixture()
+def tmp_user(tmp_knowledge_dir: Path, chat_id: int):
+    """Bring up a single chat_id's dirs inside the isolated tmp_knowledge_dir."""
+    from src.config import ensure_user_dirs
+
+    ensure_user_dirs(chat_id)
+    return chat_id
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +135,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture()
 def mock_openai_client():
-    """Return a factory that builds a mock openai.OpenAI client.
-
-    Usage:
-        client = mock_openai_client('{"key": "value"}')
-    The client's chat.completions.create() will return that content.
-    """
+    """Return a factory that builds a mock openai.OpenAI client."""
     def _factory(response_content: str = '{}'):
         mock_choice = MagicMock()
         mock_choice.message.content = response_content
@@ -115,14 +155,12 @@ def mock_openai_client():
 
 @pytest.fixture()
 def mock_telegram_update():
-    """Factory for telegram.Update mocks.
-
-    Usage:
-        update = mock_telegram_update(chat_id=12345, text="hello")
-    """
-    def _factory(chat_id: int = 12345, text: str = "", callback_data: str | None = None):
+    """Factory for telegram.Update mocks. Defaults to the canonical chat_id."""
+    def _factory(chat_id: int = CHAT_ID, text: str = "", callback_data: str | None = None):
         update = MagicMock()
         update.effective_chat.id = chat_id
+        update.effective_user = MagicMock()
+        update.effective_user.language_code = "en"
         update.message.text = text
         update.message.reply_text = AsyncMock(return_value=MagicMock(
             edit_text=AsyncMock(),
@@ -133,6 +171,7 @@ def mock_telegram_update():
             update.callback_query.data = callback_data
             update.callback_query.answer = AsyncMock()
             update.callback_query.edit_message_reply_markup = AsyncMock()
+            update.callback_query.edit_message_text = AsyncMock()
             update.callback_query.message.reply_text = AsyncMock()
         else:
             update.callback_query = None
@@ -154,20 +193,29 @@ def mock_telegram_context():
     return _factory
 
 
+@pytest.fixture()
+def allowlist_env(monkeypatch: pytest.MonkeyPatch):
+    """Set TELEGRAM_CHAT_IDS to [CHAT_ID, OTHER_CHAT_ID] for handler tests."""
+    import src.config
+    import src.telegram_bot
+    import src.scheduler
+
+    monkeypatch.setattr(src.config, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
+    monkeypatch.setattr(src.config, "ADMIN_CHAT_ID", CHAT_ID)
+    monkeypatch.setattr(src.telegram_bot, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
+    monkeypatch.setattr(src.scheduler, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
+
+
 # ---------------------------------------------------------------------------
 # Sample data helpers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def sample_summary_dict() -> dict[str, Any]:
-    """Canonical summarize_content() output for reuse across tests.
-
-    Note: no 'suggested_category' — category selection is handled by
-    src.categorize.categorize_content, not by the summarizer.
-    """
+    """Canonical summarize_content() output for reuse across tests."""
     return {
         "summary_bullets": ["Bullet one", "Bullet two"],
-        "detailed_notes": "Detailed notes paragraph in Russian.",
+        "detailed_notes": "Detailed notes paragraph.",
         "key_insights": ["Insight one"],
         "action_items": ["Action one"],
         "topics": ["ai", "agents"],
@@ -177,7 +225,7 @@ def sample_summary_dict() -> dict[str, Any]:
 
 @pytest.fixture()
 def sample_entry_kwargs() -> dict[str, Any]:
-    """Valid kwargs for storage.save_entry."""
+    """Valid kwargs for ``storage.save_entry`` (chat_id passed positionally)."""
     return {
         "title": "Test Video Title",
         "source_url": "https://www.youtube.com/watch?v=abc123",
@@ -196,7 +244,7 @@ def sample_entry_kwargs() -> dict[str, Any]:
 
 @pytest.fixture()
 def sample_pending_kwargs() -> dict[str, Any]:
-    """Valid kwargs for pending.stage_pending."""
+    """Valid kwargs for ``pending.stage_pending`` (chat_id passed positionally)."""
     return {
         "content_id": "yt:abc123",
         "source_url": "https://www.youtube.com/watch?v=abc123",

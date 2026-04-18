@@ -45,14 +45,14 @@ def _auto_merge(slug: str, existing: dict[str, str]) -> str | None:
     return None
 
 
-def categorize_content(title: str, content: str) -> tuple[str, bool]:
-    """Determine the best category for content.
+def categorize_content(chat_id: int, title: str, content: str) -> tuple[str, bool]:
+    """Determine the best category for content, scoped to ``chat_id``'s category list.
 
     Returns (slug, is_new) — is_new=True when the LLM proposed a genuinely
-    new slug that doesn't exist and isn't close enough to auto-merge into
-    an existing one.
+    new slug that doesn't exist in this user's categories and isn't close
+    enough to auto-merge into an existing one.
     """
-    categories = load_categories()
+    categories = load_categories(chat_id)
     client = openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
 
     cat_lines = "\n".join(f"- {slug} ({desc})" for slug, desc in categories.items())

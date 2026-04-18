@@ -148,6 +148,7 @@ CONTENT:
 
 
 def summarize_content(
+    chat_id: int,
     content: str,
     title: str,
     source_name: str,
@@ -157,14 +158,14 @@ def summarize_content(
     """Send content to LLM via OpenRouter and get structured summary back.
 
     Category inference is intentionally NOT done here — see
-    src/categorize.py:categorize_content. Keeping the two LLM calls
+    :func:`src.categorize.categorize_content`. Keeping the two LLM calls
     separate avoids the summarize prompt copying its example value
     verbatim (which used to force every entry into 'ai-agents').
 
-    Language and relevance scoring are driven by the user profile
-    (src.profile) — the summary output is written in profile.language
-    and the LLM sees a USER CONTEXT block listing stack / learning
-    goals / rejected topics so it can anchor the relevance rubric.
+    Language and relevance scoring are driven by ``chat_id``'s profile
+    — the summary output is written in their configured language and
+    the LLM sees a USER CONTEXT block listing stack / learning goals /
+    rejected topics so it can anchor the relevance rubric to that user.
     """
     client = _client()
 
@@ -174,12 +175,12 @@ def summarize_content(
         content = content[:max_content_len] + "\n\n[... content truncated ...]"
 
     # Build the USER CONTEXT block + pick the language directive from
-    # the current profile. Both are best-effort — a missing profile
+    # the caller's profile. Both are best-effort — a missing profile
     # falls through to neutral defaults so the summarizer still works.
     from src.profile import build_relevance_context, format_relevance_context
 
     try:
-        ctx = build_relevance_context()
+        ctx = build_relevance_context(chat_id)
     except Exception as exc:
         logger.warning("Failed to build relevance context: %s", exc)
         ctx = {"language": "en"}
@@ -233,7 +234,7 @@ You are a knowledge assistant. Answer the user's question based ONLY \
 on the provided sources from their personal knowledge base. \
 If the sources don't contain relevant information, say so honestly.
 Always cite which source each insight comes from.
-Answer in Russian."""
+{language_directive}"""
 
 QUESTION_USER_PROMPT = """\
 Context from knowledge base:
@@ -244,8 +245,17 @@ Context from knowledge base:
 User question: {question}"""
 
 
-def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
-    """Answer a free-form question using knowledge base sources."""
+def answer_question(chat_id: int, question: str, sources: list[dict[str, str]]) -> str | None:
+    """Answer a free-form question using ``chat_id``'s knowledge base sources.
+
+    The answer is written in the caller's configured profile language.
+    """
+    from src.profile import get_language
+
+    lang = get_language(chat_id)
+    language_directive = LANGUAGE_DIRECTIVES.get(lang, LANGUAGE_DIRECTIVES["en"])
+    system_prompt = QUESTION_SYSTEM_PROMPT.format(language_directive=language_directive)
+
     client = _client()
 
     # Build context block from sources
@@ -267,7 +277,7 @@ def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
             model=LLM_MODEL,
             max_tokens=2048,
             messages=[
-                {"role": "system", "content": QUESTION_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         )

@@ -1,4 +1,15 @@
-"""Save .md files, update _index.md, search knowledge base, track processed items."""
+"""Per-user knowledge base + processed tracking.
+
+Each allowed ``chat_id`` owns an isolated tree:
+
+    knowledge/{chat_id}/_index.md
+    knowledge/{chat_id}/{category}/{year}/{month}/*.md
+    knowledge/{chat_id}/{category}/{year}/{month}/*.source.txt
+
+Deduplication state (``processed.json``) is likewise per-user, so two
+chat_ids that encounter the same YouTube video each get their own
+summary. All caches and locks are partitioned by chat_id.
+"""
 
 from __future__ import annotations
 
@@ -14,67 +25,84 @@ from typing import Any
 
 from slugify import slugify
 
-from src.config import DATA_DIR, KNOWLEDGE_DIR, PROCESSED_FILE
+from src.config import KNOWLEDGE_DIR, user_knowledge_dir, user_processed_file
 
 logger = logging.getLogger(__name__)
 
 
-# ── Processed tracking (in-memory with Lock) ────────────────────────────────
+# ── Processed tracking (per-user cache + lock registry) ────────────────────
 
-_processed_lock = threading.Lock()
-_processed_cache: dict[str, Any] | None = None
+_processed_caches: dict[int, dict[str, Any]] = {}
+_processed_locks: dict[int, threading.Lock] = {}
+_processed_meta_lock = threading.Lock()
 
 
-def _load_processed_from_disk() -> dict[str, Any]:
-    """Read processed.json from disk (internal helper)."""
-    if not PROCESSED_FILE.exists():
+def _processed_lock_for(chat_id: int) -> threading.Lock:
+    with _processed_meta_lock:
+        lock = _processed_locks.get(chat_id)
+        if lock is None:
+            lock = threading.Lock()
+            _processed_locks[chat_id] = lock
+        return lock
+
+
+def _load_processed_from_disk(chat_id: int) -> dict[str, Any]:
+    """Read a user's processed.json from disk (internal helper)."""
+    path = user_processed_file(chat_id)
+    if not path.exists():
         return {}
     try:
-        with open(PROCESSED_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
 
 
-def _flush_processed() -> None:
-    """Atomically write _processed_cache to disk (caller must hold lock)."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp_path = PROCESSED_FILE.with_suffix(".tmp")
+def _flush_processed(chat_id: int) -> None:
+    """Atomically write this user's cache to disk (caller holds lock)."""
+    path = user_processed_file(chat_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(_processed_cache, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, PROCESSED_FILE)
+        json.dump(_processed_caches[chat_id], f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
 
 
-def init_processed() -> None:
-    """Load processed.json into memory. Call once at startup."""
-    global _processed_cache
-    with _processed_lock:
-        _processed_cache = _load_processed_from_disk()
+def init_processed(chat_id: int) -> None:
+    """Load a user's processed.json into memory. Call once per chat_id at startup."""
+    with _processed_lock_for(chat_id):
+        _processed_caches[chat_id] = _load_processed_from_disk(chat_id)
 
 
-def is_processed(content_id: str) -> bool:
-    """Check if a content ID has already been processed (in-memory)."""
-    with _processed_lock:
-        if _processed_cache is None:
-            return content_id in _load_processed_from_disk()
-        return content_id in _processed_cache
+def is_processed(chat_id: int, content_id: str) -> bool:
+    """True if ``content_id`` has already been processed for ``chat_id``."""
+    with _processed_lock_for(chat_id):
+        cache = _processed_caches.get(chat_id)
+        if cache is None:
+            return content_id in _load_processed_from_disk(chat_id)
+        return content_id in cache
 
 
-def mark_processed(content_id: str, status: str = "ok") -> None:
-    """Mark a content ID as processed and flush to disk atomically."""
-    global _processed_cache
-    with _processed_lock:
-        if _processed_cache is None:
-            _processed_cache = _load_processed_from_disk()
-        _processed_cache[content_id] = {
+def mark_processed(chat_id: int, content_id: str, status: str = "ok") -> None:
+    """Mark ``content_id`` as processed for ``chat_id`` and flush atomically."""
+    with _processed_lock_for(chat_id):
+        cache = _processed_caches.get(chat_id)
+        if cache is None:
+            cache = _load_processed_from_disk(chat_id)
+            _processed_caches[chat_id] = cache
+        cache[content_id] = {
             "status": status,
             "processed_at": datetime.now(timezone.utc).isoformat(),
         }
-        _flush_processed()
+        _flush_processed(chat_id)
 
 
 def make_content_id(source_type: str, identifier: str) -> str:
-    """Create a content ID: yt:{video_id} or web:{sha256(url)}."""
+    """Create a content ID: ``yt:{video_id}`` or ``web:{sha256(url)}``.
+
+    The same content maps to the same ID across users — uniqueness is
+    enforced per-user via the per-user :func:`is_processed` lookup.
+    """
     if source_type == "youtube_video":
         return f"yt:{identifier}"
     return f"web:{hashlib.sha256(identifier.encode()).hexdigest()[:16]}"
@@ -83,12 +111,13 @@ def make_content_id(source_type: str, identifier: str) -> str:
 # ── File naming ──────────────────────────────────────────────────────────────
 
 def _build_file_path(
+    chat_id: int,
     category: str,
     source_slug: str,
     title: str,
     date_str: str | None,
 ) -> Path:
-    """Build: knowledge/{category}/{year}/{month}/{source}_{title}_{date}.md"""
+    """Build the path under this user's knowledge dir."""
     if date_str:
         try:
             dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
@@ -105,11 +134,10 @@ def _build_file_path(
     date_part = dt.strftime("%Y-%m-%d")
     filename = f"{src_slug}_{title_slug}_{date_part}.md"
 
-    # Ensure max 100 chars for filename
     if len(filename) > 100:
         filename = filename[:96] + ".md"
 
-    return KNOWLEDGE_DIR / category / year / month / filename
+    return user_knowledge_dir(chat_id) / category / year / month / filename
 
 
 # ── Save markdown ────────────────────────────────────────────────────────────
@@ -121,6 +149,7 @@ def _validate_category(category: str) -> None:
 
 
 def save_entry(
+    chat_id: int,
     title: str,
     source_url: str,
     source_type: str,
@@ -138,18 +167,16 @@ def save_entry(
     raw_text: str | None = None,
     update_index: bool = True,
 ) -> Path:
-    """Save a knowledge entry as a .md file and update the index.
+    """Save a knowledge entry for ``chat_id`` as a .md file and update their index.
 
-    If *raw_text* is provided (the original transcript or article body), it is
-    written verbatim to a sibling file ``{stem}.source.txt`` in the same
-    directory. The sibling file is the lossless source — the .md is the
-    human-readable summary that references it.
+    If *raw_text* is provided (the original transcript or article body),
+    it is written verbatim to a sibling ``{stem}.source.txt`` — the
+    lossless source — alongside the .md summary.
     """
     _validate_category(category)
-    file_path = _build_file_path(category, source_name, title, date_str)
+    file_path = _build_file_path(chat_id, category, source_name, title, date_str)
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build markdown content
     lines = [f"# {title}", ""]
 
     lines.append(f"- **Source:** {source_url}")
@@ -195,9 +222,8 @@ def save_entry(
     with open(file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    logger.info("Saved entry: %s", file_path)
+    logger.info("Saved entry (chat_id=%s): %s", chat_id, file_path)
 
-    # Sibling .source.txt — lossless original transcript / article body.
     if raw_text:
         source_path = _source_sibling_path(file_path)
         try:
@@ -205,14 +231,13 @@ def save_entry(
                 f.write(raw_text)
             logger.info("Saved source text: %s", source_path)
         except OSError as exc:
-            # Don't fail the whole save just because the sibling crashed.
             logger.warning("Failed to write source sibling for %s: %s",
                            file_path, exc)
 
-    _invalidate_entry_cache()
+    _invalidate_entry_cache(chat_id)
 
     if update_index:
-        _update_index()
+        _update_index(chat_id)
 
     return file_path
 
@@ -223,98 +248,89 @@ def _source_sibling_path(md_path: Path) -> Path:
 
 
 def get_source_text_path(md_path: str | Path) -> Path:
-    """Public wrapper — return the .source.txt sibling path for a .md file.
+    """Return the .source.txt sibling path for a .md file.
 
     The sibling may or may not exist on disk; callers should check
-    `.exists()` before reading.
+    ``.exists()`` before reading.
     """
     return _source_sibling_path(Path(md_path))
 
 
 # ── Stable entry IDs ─────────────────────────────────────────────────────────
 
-def entry_id(md_path: str | Path) -> str:
+def entry_id(chat_id: int, md_path: str | Path) -> str:
     """Short stable hex ID for a knowledge-base entry, derived from its
-    path relative to KNOWLEDGE_DIR.
+    path relative to this user's ``knowledge/{chat_id}/`` root.
 
-    Used by the Telegram `/get` command, search/recent output, and the
+    Used by the Telegram ``/get`` command, search/recent output, and the
     file-download callbacks to reference an entry without embedding its
-    full absolute path in callback_data (which is capped at 64 bytes).
-
-    The 8-char sha256 prefix collides with probability ~2^-32 — more
-    than enough for a personal knowledge base of a few thousand entries.
-    Collisions surface as "entry not found" rather than as silent
-    wrong-file delivery because find_entry_by_id iterates and checks
-    each candidate's full hash, so even a prefix collision would only
-    affect the ordering.
+    full absolute path in ``callback_data`` (capped at 64 bytes).
     """
-    import hashlib
     p = Path(md_path)
+    root = user_knowledge_dir(chat_id)
     try:
-        rel = p.relative_to(KNOWLEDGE_DIR)
+        rel = p.relative_to(root)
     except ValueError:
-        # Fall back to the filename if the path is outside KNOWLEDGE_DIR
-        # (shouldn't happen in practice — knowledge entries always live
-        # under KNOWLEDGE_DIR). Using the name alone is still stable as
-        # long as the file isn't moved.
         rel = Path(p.name)
     return hashlib.sha256(str(rel).encode("utf-8")).hexdigest()[:8]
 
 
-def find_entry_by_id(wanted_id: str) -> dict[str, str] | None:
-    """Look up a cached entry by its `entry_id(...)` value.
+def find_entry_by_id(chat_id: int, wanted_id: str) -> dict[str, str] | None:
+    """Look up a cached entry by its :func:`entry_id` value.
 
-    Returns the same dict shape as `_parse_entry_metadata` (with the
-    added `"id"` key populated), or None if no entry matches. Uses the
-    60-second cache in `_get_all_entries` so repeated lookups during a
-    single Telegram interaction don't re-scan the filesystem.
+    Returns the same dict shape as :func:`_parse_entry_metadata` (with the
+    added ``"id"`` key populated), or None if no entry matches.
     """
     if not wanted_id:
         return None
-    for entry in _get_all_entries():
+    for entry in _get_all_entries(chat_id):
         if entry.get("id") == wanted_id:
             return entry
     return None
 
 
 def read_entry_markdown(path: str | Path) -> str:
-    """Read the full markdown contents of an entry from disk.
-
-    Separate from `_parse_entry_metadata` which only reads the top 2KB
-    for header parsing. This helper reads the whole file so the bot
-    can surface detailed notes / key insights / action items via
-    `/get <id>`.
-    """
+    """Read the full markdown contents of an entry from disk."""
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 # ── Move entry between categories ────────────────────────────────────────────
 
-def move_entry(old_path: str, new_category: str) -> str | None:
-    """Move a .md file to a new category directory. Returns new path or None."""
+def move_entry(chat_id: int, old_path: str, new_category: str) -> str | None:
+    """Move a .md file to a new category directory under this user's tree.
+
+    Returns the new path or None if the source is missing.
+    """
     old = Path(old_path)
     if not old.exists():
         logger.warning("Cannot move — file not found: %s", old_path)
         return None
 
-    # Build new path: knowledge/{new_category}/{year}/{month}/{filename}
-    # Extract year/month from old path structure
-    parts = old.relative_to(KNOWLEDGE_DIR).parts  # (old_cat, year, month, file)
+    root = user_knowledge_dir(chat_id)
+    try:
+        parts = old.relative_to(root).parts  # (old_cat, year, month, file)
+    except ValueError:
+        parts = ()
+
     if len(parts) >= 4:
-        new_path = KNOWLEDGE_DIR / new_category / parts[1] / parts[2] / parts[3]
+        new_path = root / new_category / parts[1] / parts[2] / parts[3]
     else:
-        new_path = KNOWLEDGE_DIR / new_category / old.name
+        new_path = root / new_category / old.name
 
     new_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Update category inside the file content
     content = old.read_text(encoding="utf-8")
     import re
-    content = re.sub(r"^- \*\*Category:\*\* .+$", f"- **Category:** {new_category}", content, count=1, flags=re.MULTILINE)
+    content = re.sub(
+        r"^- \*\*Category:\*\* .+$",
+        f"- **Category:** {new_category}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
     new_path.write_text(content, encoding="utf-8")
 
-    # Move the source-text sibling alongside, if it exists.
     old_source = _source_sibling_path(old)
     if old_source.exists():
         new_source = _source_sibling_path(new_path)
@@ -322,28 +338,28 @@ def move_entry(old_path: str, new_category: str) -> str | None:
         logger.info("Moved source sibling: %s -> %s", old_source, new_source)
 
     old.unlink()
-    logger.info("Moved entry: %s -> %s", old_path, new_path)
-    _invalidate_entry_cache()
-    _update_index()
+    logger.info("Moved entry (chat_id=%s): %s -> %s", chat_id, old_path, new_path)
+    _invalidate_entry_cache(chat_id)
+    _update_index(chat_id)
     return str(new_path)
 
 
 # ── Index ────────────────────────────────────────────────────────────────────
 
-def _update_index() -> None:
-    """Regenerate _index.md from all .md files in knowledge/."""
-    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-    index_path = KNOWLEDGE_DIR / "_index.md"
+def _update_index(chat_id: int) -> None:
+    """Regenerate _index.md from all .md files in this user's knowledge tree."""
+    root = user_knowledge_dir(chat_id)
+    root.mkdir(parents=True, exist_ok=True)
+    index_path = root / "_index.md"
 
     entries: list[dict[str, str]] = []
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
+    for md_file in root.rglob("*.md"):
         if md_file.name == "_index.md":
             continue
-        info = _parse_entry_metadata(md_file)
+        info = _parse_entry_metadata(chat_id, md_file)
         if info:
             entries.append(info)
 
-    # Sort by date descending
     entries.sort(key=lambda e: e.get("date", ""), reverse=True)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -368,7 +384,7 @@ def _update_index() -> None:
     for entry in entries:
         if entry.get("date", "") >= week_ago:
             type_icon = "\U0001f4fa" if entry.get("type") == "youtube_video" else "\U0001f4f0"
-            rel_path = os.path.relpath(entry["path"], KNOWLEDGE_DIR)
+            rel_path = os.path.relpath(entry["path"], root)
             lines.append(
                 f"| {entry.get('date', '')} "
                 f"| {type_icon} "
@@ -383,7 +399,6 @@ def _update_index() -> None:
     lines.append("## By Category")
     lines.append("")
 
-    # Group by category
     by_cat: dict[str, list[dict[str, str]]] = {}
     for entry in entries:
         cat = entry.get("category", "uncategorized")
@@ -395,9 +410,9 @@ def _update_index() -> None:
         lines.append("")
         lines.append("| Date | Type | Source | Title | Rel. | File |")
         lines.append("|------|------|--------|-------|------|------|")
-        for entry in cat_entries[:20]:  # Limit to avoid huge index
+        for entry in cat_entries[:20]:
             type_icon = "\U0001f4fa" if entry.get("type") == "youtube_video" else "\U0001f4f0"
-            rel_path = os.path.relpath(entry["path"], KNOWLEDGE_DIR)
+            rel_path = os.path.relpath(entry["path"], root)
             lines.append(
                 f"| {entry.get('date', '')} "
                 f"| {type_icon} "
@@ -412,17 +427,17 @@ def _update_index() -> None:
         f.write("\n".join(lines))
 
 
-def _parse_entry_metadata(md_file: Path) -> dict[str, str] | None:
+def _parse_entry_metadata(chat_id: int, md_file: Path) -> dict[str, str] | None:
     """Parse YAML-like metadata from the top of a .md file."""
     try:
         with open(md_file, "r", encoding="utf-8") as f:
-            content = f.read(2000)  # Only read top portion
+            content = f.read(2000)
     except OSError:
         return None
 
     info: dict[str, str] = {
         "path": str(md_file),
-        "id": entry_id(md_file),
+        "id": entry_id(chat_id, md_file),
     }
 
     for line in content.split("\n"):
@@ -453,48 +468,51 @@ def _parse_entry_metadata(md_file: Path) -> dict[str, str] | None:
     return info
 
 
-# ── Entry cache (TTL-based) ──────────────────────────────────────────────────
+# ── Entry cache (TTL-based, per-user) ───────────────────────────────────────
 
-_entry_cache: list[dict[str, str]] | None = None
-_entry_cache_time: float = 0.0
+_entry_caches: dict[int, tuple[list[dict[str, str]], float]] = {}
 _ENTRY_CACHE_TTL: float = 60.0  # seconds
 
 
-def _get_all_entries() -> list[dict[str, str]]:
-    """Return all parsed entries, using cache if still valid."""
-    global _entry_cache, _entry_cache_time
+def _get_all_entries(chat_id: int) -> list[dict[str, str]]:
+    """Return all parsed entries for ``chat_id``, using cache if still valid."""
     now = _time.monotonic()
-    if _entry_cache is not None and (now - _entry_cache_time) < _ENTRY_CACHE_TTL:
-        return _entry_cache
+    cached = _entry_caches.get(chat_id)
+    if cached is not None:
+        entries_cached, cached_at = cached
+        if (now - cached_at) < _ENTRY_CACHE_TTL:
+            return entries_cached
 
+    root = user_knowledge_dir(chat_id)
     entries: list[dict[str, str]] = []
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
-        if md_file.name == "_index.md":
-            continue
-        info = _parse_entry_metadata(md_file)
-        if info:
-            entries.append(info)
+    if root.exists():
+        for md_file in root.rglob("*.md"):
+            if md_file.name == "_index.md":
+                continue
+            info = _parse_entry_metadata(chat_id, md_file)
+            if info:
+                entries.append(info)
 
-    _entry_cache = entries
-    _entry_cache_time = now
+    _entry_caches[chat_id] = (entries, now)
     return entries
 
 
-def _invalidate_entry_cache() -> None:
-    """Reset entry cache so next access re-scans."""
-    global _entry_cache, _entry_cache_time
-    _entry_cache = None
-    _entry_cache_time = 0.0
+def _invalidate_entry_cache(chat_id: int) -> None:
+    """Reset this user's entry cache so next access re-scans."""
+    _entry_caches.pop(chat_id, None)
 
 
 # ── Search ───────────────────────────────────────────────────────────────────
 
-def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
-    """Search knowledge base by keyword matching in titles and content."""
+def search_knowledge(chat_id: int, query: str, max_results: int = 10) -> list[dict[str, str]]:
+    """Search ``chat_id``'s knowledge base by keyword matching."""
     query_lower = query.lower()
     results: list[tuple[int, dict[str, str]]] = []
+    root = user_knowledge_dir(chat_id)
+    if not root.exists():
+        return []
 
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
+    for md_file in root.rglob("*.md"):
         if md_file.name == "_index.md":
             continue
 
@@ -507,9 +525,7 @@ def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
         score = 0
         content_lower = content.lower()
 
-        # Score based on matches
         for word in query_lower.split():
-            # Title match (first line) is worth more
             first_line = content.split("\n", 1)[0].lower()
             if word in first_line:
                 score += 10
@@ -517,9 +533,8 @@ def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
                 score += content_lower.count(word)
 
         if score > 0:
-            info = _parse_entry_metadata(md_file)
+            info = _parse_entry_metadata(chat_id, md_file)
             if info:
-                # Extract first few summary bullets
                 summary_start = content.find("## Summary")
                 if summary_start != -1:
                     summary_section = content[summary_start:summary_start + 500]
@@ -535,36 +550,29 @@ def search_knowledge(query: str, max_results: int = 10) -> list[dict[str, str]]:
     return [r[1] for r in results[:max_results]]
 
 
-def get_recent_entries(count: int = 5) -> list[dict[str, str]]:
-    """Get the most recently added entries."""
-    entries = list(_get_all_entries())
+def get_recent_entries(chat_id: int, count: int = 5) -> list[dict[str, str]]:
+    """Get the most recently added entries for ``chat_id``."""
+    entries = list(_get_all_entries(chat_id))
     entries.sort(key=lambda e: e.get("date", ""), reverse=True)
     return entries[:count]
 
 
-def get_entries_in_category(slug: str, limit: int = 20) -> list[dict[str, str]]:
-    """Return up to *limit* entries in the given category, newest first.
-
-    Reuses the 60-second cache in :func:`_get_all_entries`.
-    Returns an empty list for unknown slugs.
-    """
-    entries = [e for e in _get_all_entries() if e.get("category") == slug]
+def get_entries_in_category(chat_id: int, slug: str, limit: int = 20) -> list[dict[str, str]]:
+    """Return up to *limit* entries in the given category for ``chat_id``."""
+    entries = [e for e in _get_all_entries(chat_id) if e.get("category") == slug]
     entries.sort(key=lambda e: e.get("date", ""), reverse=True)
     return entries[:limit]
 
 
-def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
-    """Find relevant entries for a free-form question.
-
-    Returns up to *max_files* results, each containing extracted sections
-    (Summary, Key Insights, Detailed Notes) trimmed to fit context limits.
-
-    Ranking: keyword score * recency bonus * relevance score.
-    """
+def search_for_question(chat_id: int, query: str, max_files: int = 5) -> list[dict[str, str]]:
+    """Find relevant entries in ``chat_id``'s knowledge base for a free-form question."""
     query_lower = query.lower()
     scored: list[tuple[float, Path]] = []
+    root = user_knowledge_dir(chat_id)
+    if not root.exists():
+        return []
 
-    for md_file in KNOWLEDGE_DIR.rglob("*.md"):
+    for md_file in root.rglob("*.md"):
         if md_file.name == "_index.md":
             continue
 
@@ -585,12 +593,10 @@ def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
         if keyword_score == 0:
             continue
 
-        # Parse metadata for bonus multipliers
-        info = _parse_entry_metadata(md_file)
+        info = _parse_entry_metadata(chat_id, md_file)
         if not info:
             continue
 
-        # Recency bonus: entries from last 30 days get up to 2x
         recency_bonus = 1.0
         entry_date = info.get("date", "")
         if entry_date:
@@ -603,7 +609,6 @@ def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
             except ValueError:
                 pass
 
-        # Relevance score bonus
         rel_bonus = 1.0
         try:
             rel_bonus = 1.0 + int(info.get("relevance", "5").strip()) / 10.0
@@ -618,7 +623,7 @@ def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
 
     results: list[dict[str, str]] = []
     total_chars = 0
-    max_total_chars = 40_000  # ~10K tokens
+    max_total_chars = 40_000
 
     for md_file in top_files:
         try:
@@ -627,14 +632,13 @@ def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
         except OSError:
             continue
 
-        info = _parse_entry_metadata(md_file) or {}
+        info = _parse_entry_metadata(chat_id, md_file) or {}
         extracted = _extract_sections(content, compact=(total_chars > max_total_chars // 2))
 
         info["extracted_text"] = extracted
         results.append(info)
         total_chars += len(extracted)
 
-    # If total context is way too large, re-extract with summary-only
     if total_chars > max_total_chars:
         for entry in results:
             path = entry.get("path", "")
@@ -651,10 +655,7 @@ def search_for_question(query: str, max_files: int = 5) -> list[dict[str, str]]:
 
 
 def _extract_sections(content: str, compact: bool = False) -> str:
-    """Extract Summary + Key Insights + Detailed Notes from a .md file.
-
-    If *compact* is True, only extract Summary (for token budget).
-    """
+    """Extract Summary + Key Insights + Detailed Notes from a .md file."""
     sections: list[str] = []
 
     for section_name in ["## Summary", "## Key Insights", "## Detailed Notes"]:
@@ -663,7 +664,6 @@ def _extract_sections(content: str, compact: bool = False) -> str:
         start = content.find(section_name)
         if start == -1:
             continue
-        # Find the next ## heading or end of file
         next_heading = content.find("\n## ", start + len(section_name))
         if next_heading == -1:
             section_text = content[start:]
@@ -674,9 +674,9 @@ def _extract_sections(content: str, compact: bool = False) -> str:
     return "\n\n".join(sections) if sections else content[:1000]
 
 
-def get_stats() -> dict[str, Any]:
-    """Collect knowledge base statistics."""
-    entries = list(_get_all_entries())
+def get_stats(chat_id: int) -> dict[str, Any]:
+    """Collect knowledge base statistics for ``chat_id``."""
+    entries = list(_get_all_entries(chat_id))
 
     total = len(entries)
     videos = sum(1 for e in entries if e.get("type") == "youtube_video")
@@ -686,8 +686,6 @@ def get_stats() -> dict[str, Any]:
     by_source: dict[str, int] = {}
     relevance_scores: list[int] = []
 
-    # Per-category health accumulators: count, latest entry date,
-    # sum/count of relevance for averaging.
     cat_health: dict[str, dict[str, Any]] = {}
 
     week_ago = (datetime.now(timezone.utc) -
@@ -712,7 +710,6 @@ def get_stats() -> dict[str, Any]:
         if e.get("date", "") >= week_ago:
             this_week += 1
 
-        # Per-category accumulators
         bucket = cat_health.setdefault(cat, {
             "count": 0, "last_entry": "", "rel_sum": 0, "rel_n": 0,
         })
@@ -732,7 +729,6 @@ def get_stats() -> dict[str, Any]:
 
     top_sources = sorted(by_source.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    # Finalize category health: compute avg_relevance and stale flag.
     category_health: dict[str, dict[str, Any]] = {}
     for cat, bucket in cat_health.items():
         avg = (round(bucket["rel_sum"] / bucket["rel_n"], 1)

@@ -13,8 +13,9 @@ import asyncio
 import logging
 import os
 import re
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -189,15 +190,38 @@ def _authorized(update: Update) -> bool:
 
 
 def _chat_id(update: Update) -> int:
-    """Extract chat_id from the update. Caller should have passed _authorized first."""
-    return update.effective_chat.id if update.effective_chat else 0
+    """Extract chat_id from the update. Only safe to call after authorized()."""
+    cid = update.effective_chat.id if update.effective_chat else 0
+    if cid not in TELEGRAM_CHAT_IDS:
+        # Defence-in-depth: if a handler ever forgets @authorized, refuse rather
+        # than return 0 (which would silently mutate the admin's state).
+        raise PermissionError(f"chat_id {cid} not in allowlist")
+    return cid
+
+
+Handler = Callable[[Update, "ContextTypes.DEFAULT_TYPE"], Awaitable[None]]
+
+
+def authorized(handler: Handler) -> Handler:
+    """Decorator: drop unauthorized updates before the handler runs.
+
+    Replaces the imperative `if not _authorized(update): return` prelude
+    so that a new handler can't accidentally skip the check.
+    """
+
+    @wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not _authorized(update):
+            return
+        await handler(update, context)
+
+    return wrapper
 
 
 # ── Command handlers ─────────────────────────────────────────────────────────
 
+@authorized
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     if not profile_exists(chat_id):
         await _start_wizard(update, context)
@@ -205,16 +229,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(t("welcome_returning", get_language(chat_id)))
 
 
+@authorized
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     await update.message.reply_text(t("help_text", get_language(chat_id)))
 
 
+@authorized
 async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     await update.message.reply_text(
         t("language_menu_prompt", get_language(chat_id)),
@@ -222,9 +244,8 @@ async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+@authorized
 async def cmd_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     if profile_exists(chat_id):
         lang = get_language(chat_id)
@@ -240,9 +261,8 @@ async def cmd_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _start_wizard(update, context)
 
 
+@authorized
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     flow_keys = ("pending_channel", "waiting_new_category",
@@ -528,9 +548,8 @@ async def _handle_wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _advance_wizard(update, context, update.message.reply_text)
 
 
+@authorized
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     channels = load_channels(chat_id)
@@ -546,9 +565,8 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -597,9 +615,8 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
+@authorized
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -626,9 +643,8 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
 
 
+@authorized
 async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     stats = get_stats(chat_id)
@@ -657,9 +673,8 @@ async def cmd_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -693,9 +708,8 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized
 async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -721,9 +735,8 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     stats = get_stats(chat_id)
@@ -731,7 +744,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     active = sum(1 for ch in channels if ch.get("enabled", True))
 
     await update.message.reply_text(
-        "🤖 PulseBrain Status\n\n"
+        t("status_title", lang)
+        + "\n\n"
         + t(
             "status_body",
             lang,
@@ -746,38 +760,37 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+@authorized
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
+    lang = get_language(chat_id)
     stats = get_stats(chat_id)
 
     lines = [
-        "📊 Knowledge Base Stats\n",
-        f"📁 Total entries: {stats['total']}",
-        f"📺 YouTube videos: {stats['videos']}",
-        f"📰 Web articles: {stats['articles']}",
+        t("stats_title", lang) + "\n",
+        t("stats_total", lang, total=stats["total"]),
+        t("stats_videos", lang, videos=stats["videos"]),
+        t("stats_articles", lang, articles=stats["articles"]),
         "",
-        "By category:",
+        t("stats_by_category_header", lang),
     ]
     for cat, count in stats["by_category"].items():
-        lines.append(f"• {cat}: {count} entries")
+        lines.append(t("stats_category_item", lang, cat=cat, count=count))
 
-    lines.append(f"\nThis week: {stats['this_week']} new entries")
-    lines.append(f"Avg relevance: {stats['avg_relevance']}/10")
+    lines.append("\n" + t("stats_this_week", lang, count=stats["this_week"]))
+    lines.append(t("stats_avg_relevance", lang, avg=stats["avg_relevance"]))
 
     if stats["top_sources"]:
-        lines.append("\nTop sources:")
+        lines.append("\n" + t("stats_top_sources_header", lang))
         for name, count in stats["top_sources"]:
-            lines.append(f"• {name}: {count} entries")
+            lines.append(t("stats_top_source_item", lang, name=name, count=count))
 
     await update.message.reply_text("\n".join(lines))
 
 
+@authorized
 async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Force a pipeline run for this user's enabled channels."""
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     await update.message.reply_text(t("run_starting", lang))
@@ -791,9 +804,8 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(t("run_nothing", lang))
 
 
+@authorized
 async def cmd_pending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     entries = list_pending(chat_id)
@@ -817,9 +829,8 @@ _REJECT_REASON_KEYS: dict[str, str] = {
 }
 
 
+@authorized
 async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -967,9 +978,8 @@ async def _send_entry_detail(chat_id: int, send_reply: Any, entry: dict[str, str
         )
 
 
+@authorized
 async def cmd_get(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
     args = context.args or []
@@ -988,9 +998,8 @@ async def cmd_get(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ── Link drop handler ────────────────────────────────────────────────────────
 
+@authorized
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
 
     text = update.message.text or ""
@@ -1229,9 +1238,8 @@ def _category_keyboard(chat_id: int, prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+@authorized
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update):
-        return
     chat_id = _chat_id(update)
     query = update.callback_query
     if not query:

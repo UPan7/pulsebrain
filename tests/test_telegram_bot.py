@@ -125,8 +125,9 @@ async def test_cmd_start_first_run_shows_welcome_in_detected_language():
         patch("src.telegram_bot.profile_exists", return_value=False),
     ):
         await cmd_start(update, ctx)
-    text = update.message.reply_text.call_args[0][0]
-    assert "Hallo" in text  # German welcome
+    # Two messages now: the pitch (first) + the language picker (second).
+    texts = [call.args[0] for call in update.message.reply_text.call_args_list]
+    assert any("Hallo" in t for t in texts)  # German pitch
     # Draft should be pre-seeded with the detected language
     assert ctx.user_data["onboarding_draft"]["language"] == "de"
 
@@ -143,8 +144,8 @@ async def test_cmd_start_first_run_falls_back_to_english_for_unknown_locale():
         patch("src.telegram_bot.profile_exists", return_value=False),
     ):
         await cmd_start(update, ctx)
-    text = update.message.reply_text.call_args[0][0]
-    assert "Hi" in text  # English welcome
+    texts = [call.args[0] for call in update.message.reply_text.call_args_list]
+    assert any("Hi" in t for t in texts)  # English pitch
     assert ctx.user_data["onboarding_draft"]["language"] == "en"
 
 
@@ -1607,14 +1608,15 @@ async def test_cmd_start_fresh_triggers_wizard(tmp_knowledge_dir):
     # State initialized
     assert ctx.user_data["onboarding_step"] == 0
     assert "onboarding_draft" in ctx.user_data
-    # Single-language welcome (Phase 7.4 — defaults to English because
-    # the _make_update helper's default language_code is "en-US") + 10-lang keyboard
-    call = update.message.reply_text.call_args
-    text = call[0][0]
-    assert "Hi" in text
-    assert "reply_markup" in call.kwargs
+    # Two messages: pitch (first, no keyboard) + language picker (second).
+    calls = update.message.reply_text.call_args_list
+    assert len(calls) == 2
+    pitch_text = calls[0].args[0]
+    assert "Hi" in pitch_text
+    picker_call = calls[1]
+    assert "reply_markup" in picker_call.kwargs
+    keyboard = picker_call.kwargs["reply_markup"]
     # 10-lang picker has 5 rows × 2 buttons
-    keyboard = call.kwargs["reply_markup"]
     assert len(keyboard.inline_keyboard) == 5
 
 

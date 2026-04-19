@@ -350,12 +350,13 @@ async def _start_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     context.user_data["onboarding_draft"] = draft
 
     intro_lang = draft["language"]
-    text = (
-        t("welcome_first_run", intro_lang)
-        + "\n\n"
-        + t("wizard_lang_prompt", intro_lang)
+    # Send two separate messages so the pitch stays in chat history even
+    # after the user picks a language (picking edits the picker message).
+    await update.message.reply_text(t("welcome_first_run", intro_lang))
+    await update.message.reply_text(
+        t("wizard_lang_prompt", intro_lang),
+        reply_markup=_wizard_lang_keyboard(),
     )
-    await update.message.reply_text(text, reply_markup=_wizard_lang_keyboard())
 
 
 async def _send_wizard_step(send, *, step_index: int, draft: dict[str, Any]) -> None:

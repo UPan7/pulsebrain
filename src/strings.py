@@ -83,9 +83,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "Используй /help для списка команд."
         ),
         "welcome_first_run": (
-            "👋 Привет! Это твой персональный мозг.\n\n"
-            "Давай настроим его под тебя — займёт 3-5 минут. "
-            "В любой момент можно прервать командой /cancel."
+            "👋 Привет! Я PulseBrain — твой персональный агрегатор знаний.\n\n"
+            "Ты сохраняешь кучу всего «на потом» и никогда не возвращаешься. "
+            "Я это чиню:\n"
+            "• 📎 Кидай ссылку на YouTube-видео или статью — я делаю саммари "
+            "и раскладываю по категориям.\n"
+            "• 📡 Подпиши меня на YouTube-каналы — буду следить и присылать "
+            "новые видео на твоё одобрение.\n"
+            "• 💬 Задавай вопросы обычным текстом — поищу в твоей базе и "
+            "отвечу со ссылками на источники.\n"
+            "• 📂 Всё остаётся твоим — обычные markdown-файлы, никакого "
+            "vendor lock-in.\n\n"
+            "Давай потратим 3 минуты на настройку профиля — чтобы я оценивал "
+            "релевантность конкретно под тебя. /cancel — выйти в любой момент."
         ),
         "help_text": (
             "📖 Команды:\n\n"
@@ -342,9 +352,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use /help for the command list."
         ),
         "welcome_first_run": (
-            "👋 Hi! This is your personal brain.\n\n"
-            "Let's set it up — takes 3-5 minutes. You can bail at any "
-            "time with /cancel."
+            "👋 Hi! I'm PulseBrain — your personal knowledge aggregator.\n\n"
+            "You save a ton of stuff \"for later\" and never come back to it. "
+            "I fix that:\n"
+            "• 📎 Drop me a YouTube or article link — I summarize it and file "
+            "it by category.\n"
+            "• 📡 Subscribe me to YouTube channels — I watch them on schedule "
+            "and queue new videos for your review.\n"
+            "• 💬 Ask me questions in plain text — I search your knowledge "
+            "base and answer with source citations.\n"
+            "• 📂 Everything stays yours — plain markdown files, no cloud "
+            "lock-in.\n\n"
+            "Let's spend 3 minutes setting up your profile so I can score "
+            "relevance for what YOU actually care about. /cancel to stop."
         ),
         "help_text": (
             "📖 Commands:\n\n"
@@ -602,9 +622,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Nutze /help für die Befehlsliste."
         ),
         "welcome_first_run": (
-            "👋 Hallo! Das ist dein persönliches Gehirn.\n\n"
-            "Richten wir es ein — dauert 3-5 Minuten. Du kannst jederzeit "
-            "mit /cancel abbrechen."
+            "👋 Hallo! Ich bin PulseBrain — dein persönlicher "
+            "Wissens-Aggregator.\n\n"
+            "Du speicherst vieles „für später\" und kommst nie darauf "
+            "zurück. Das behebe ich:\n"
+            "• 📎 Schick mir einen YouTube- oder Artikel-Link — ich fasse "
+            "ihn zusammen und sortiere ihn ein.\n"
+            "• 📡 Abonniere mich zu YouTube-Kanälen — ich überwache sie und "
+            "stelle neue Videos zur Freigabe.\n"
+            "• 💬 Stelle Fragen im Klartext — ich durchsuche deine "
+            "Wissensbasis und antworte mit Quellenangaben.\n"
+            "• 📂 Alles bleibt bei dir — einfache Markdown-Dateien, kein "
+            "Cloud-Lock-in.\n\n"
+            "Nehmen wir uns 3 Minuten für dein Profil, damit ich Relevanz "
+            "passend für DICH bewerten kann. /cancel zum Abbrechen."
         ),
         "help_text": (
             "📖 Befehle:\n\n"
@@ -853,9 +884,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Utilise /help pour la liste des commandes."
         ),
         "welcome_first_run": (
-            "👋 Bonjour ! C'est ton cerveau personnel.\n\n"
-            "Configurons-le — ça prend 3-5 minutes. Tu peux abandonner à "
-            "tout moment avec /cancel."
+            "👋 Salut ! Je suis PulseBrain — ton agrégateur de "
+            "connaissances personnel.\n\n"
+            "Tu sauvegardes plein de choses « pour plus tard » et tu n'y "
+            "reviens jamais. Je règle ça :\n"
+            "• 📎 Envoie-moi un lien YouTube ou un article — je le résume "
+            "et je le classe par catégorie.\n"
+            "• 📡 Abonne-moi à des chaînes YouTube — je les surveille et te "
+            "soumets les nouvelles vidéos pour validation.\n"
+            "• 💬 Pose-moi des questions en texte libre — je cherche dans "
+            "ta base et réponds avec les sources citées.\n"
+            "• 📂 Tout reste à toi — de simples fichiers markdown, pas de "
+            "lock-in cloud.\n\n"
+            "Prenons 3 minutes pour configurer ton profil, que je puisse "
+            "évaluer la pertinence pour TOI. /cancel pour arrêter."
         ),
         "help_text": (
             "📖 Commandes :\n\n"
@@ -1102,9 +1144,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Usa /help para la lista de comandos."
         ),
         "welcome_first_run": (
-            "👋 ¡Hola! Este es tu cerebro personal.\n\n"
-            "Vamos a configurarlo — toma 3-5 minutos. Puedes abandonar en "
-            "cualquier momento con /cancel."
+            "👋 ¡Hola! Soy PulseBrain — tu agregador personal de "
+            "conocimiento.\n\n"
+            "Guardas un montón de cosas «para después» y nunca vuelves a "
+            "ellas. Yo arreglo eso:\n"
+            "• 📎 Envíame un enlace de YouTube o un artículo — lo resumo y "
+            "lo archivo por categoría.\n"
+            "• 📡 Suscríbeme a canales de YouTube — los vigilo y te pongo "
+            "los videos nuevos para revisar.\n"
+            "• 💬 Pregúntame en texto libre — busco en tu base y respondo "
+            "citando las fuentes.\n"
+            "• 📂 Todo queda tuyo — archivos markdown simples, sin lock-in "
+            "en la nube.\n\n"
+            "Tres minutos configurando tu perfil para que yo mida la "
+            "relevancia según TÚ. /cancel para salir."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1351,9 +1404,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Usa /help per la lista dei comandi."
         ),
         "welcome_first_run": (
-            "👋 Ciao! Questo è il tuo cervello personale.\n\n"
-            "Configuriamolo — ci vogliono 3-5 minuti. Puoi interrompere in "
-            "qualsiasi momento con /cancel."
+            "👋 Ciao! Sono PulseBrain — il tuo aggregatore personale di "
+            "conoscenza.\n\n"
+            "Salvi un sacco di cose «per dopo» e non ci torni mai. Io "
+            "sistemo questo:\n"
+            "• 📎 Mandami un link YouTube o un articolo — lo riassumo e "
+            "lo archivio per categoria.\n"
+            "• 📡 Iscrivimi a canali YouTube — li controllo e ti metto in "
+            "coda i nuovi video per la revisione.\n"
+            "• 💬 Fammi domande in testo libero — cerco nella tua base e "
+            "rispondo citando le fonti.\n"
+            "• 📂 Tutto rimane tuo — semplici file markdown, niente lock-in "
+            "cloud.\n\n"
+            "Tre minuti per configurare il profilo così posso valutare la "
+            "rilevanza per TE. /cancel per uscire."
         ),
         "help_text": (
             "📖 Comandi:\n\n"
@@ -1598,9 +1662,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use /help para a lista de comandos."
         ),
         "welcome_first_run": (
-            "👋 Olá! Este é o seu cérebro pessoal.\n\n"
-            "Vamos configurá-lo — leva 3-5 minutos. Você pode desistir a "
-            "qualquer momento com /cancel."
+            "👋 Olá! Sou o PulseBrain — seu agregador pessoal de "
+            "conhecimento.\n\n"
+            "Você salva um monte de coisas «para depois» e nunca volta. "
+            "Eu resolvo isso:\n"
+            "• 📎 Mande um link do YouTube ou artigo — eu resumo e arquivo "
+            "por categoria.\n"
+            "• 📡 Inscreva-me em canais do YouTube — eu monitoro e coloco "
+            "vídeos novos na fila de revisão.\n"
+            "• 💬 Pergunte em texto livre — busco na sua base e respondo "
+            "citando as fontes.\n"
+            "• 📂 Tudo continua seu — arquivos markdown simples, sem "
+            "lock-in na nuvem.\n\n"
+            "Três minutos para configurar o perfil para eu avaliar a "
+            "relevância para VOCÊ. /cancel para sair."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1844,8 +1919,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "使用 /help 查看命令列表。"
         ),
         "welcome_first_run": (
-            "👋 你好！这是你的个人大脑。\n\n"
-            "让我们来设置它 — 需要 3-5 分钟。你随时可以用 /cancel 中止。"
+            "👋 你好！我是 PulseBrain — 你的个人知识聚合器。\n\n"
+            "你经常把很多东西「留着以后看」，但从不回头。我来解决这个问题：\n"
+            "• 📎 发我一个 YouTube 视频或文章链接 — 我会总结并按分类归档。\n"
+            "• 📡 订阅 YouTube 频道 — 我会定期监控，把新视频排队供你审核。\n"
+            "• 💬 用自然语言提问 — 我会在你的知识库里搜索并附上来源回答。\n"
+            "• 📂 一切都是你的 — 简单的 markdown 文件，没有云端绑定。\n\n"
+            "花 3 分钟设置个人资料，让我根据你来评估相关性。"
+            "/cancel 可以随时退出。"
         ),
         "help_text": (
             "📖 命令：\n\n"
@@ -2078,9 +2159,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "コマンドリストは /help で確認できます。"
         ),
         "welcome_first_run": (
-            "👋 こんにちは！これはあなた専用の脳です。\n\n"
-            "セットアップしましょう — 3〜5 分かかります。いつでも /cancel "
-            "で中断できます。"
+            "👋 こんにちは！ PulseBrain です — あなた専用の"
+            "ナレッジ・アグリゲーター。\n\n"
+            "たくさんのものを「後で読もう」と保存して、結局戻ってこない"
+            "ですよね。それを直します：\n"
+            "• 📎 YouTube リンクや記事を送ってください — 要約してカテゴリーに"
+            "振り分けます。\n"
+            "• 📡 YouTube チャンネルを登録してください — 定期的にチェックして、"
+            "新しい動画を承認待ちに入れます。\n"
+            "• 💬 自然文で質問してください — ナレッジベースを検索して、"
+            "出典付きで答えます。\n"
+            "• 📂 すべてあなたのもの — ただの markdown ファイル、クラウド"
+            "ロックインはありません。\n\n"
+            "3 分ほどでプロフィール設定をしましょう。あなたに合った関連性"
+            "評価ができます。/cancel でいつでも中止できます。"
         ),
         "help_text": (
             "📖 コマンド：\n\n"
@@ -2320,9 +2412,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "استخدم /help للاطلاع على قائمة الأوامر."
         ),
         "welcome_first_run": (
-            "👋 مرحباً! هذا عقلك الشخصي.\n\n"
-            "لنقم بإعداده — يستغرق 3-5 دقائق. يمكنك الإلغاء في أي وقت بـ "
-            "/cancel."
+            "👋 مرحباً! أنا PulseBrain — مجمّع المعرفة الشخصي الخاص بك.\n\n"
+            "أنت تحفظ الكثير «للاحقاً» ولا تعود إليه أبداً. أنا أحلّ هذه "
+            "المشكلة:\n"
+            "• 📎 أرسل لي رابط يوتيوب أو مقال — ألخصه وأرتبه في فئات.\n"
+            "• 📡 اشترك في قنوات يوتيوب — أراقبها وأضع الفيديوهات الجديدة "
+            "في طابور المراجعة.\n"
+            "• 💬 اسألني بنص حر — أبحث في قاعدة معرفتك وأجيب مع ذكر "
+            "المصادر.\n"
+            "• 📂 كل شيء يبقى لك — ملفات markdown بسيطة، بدون قفل سحابي.\n\n"
+            "ثلاث دقائق لإعداد ملفك الشخصي حتى أقيس الملاءمة وفقاً لك "
+            "أنت. /cancel للإلغاء في أي وقت."
         ),
         "help_text": (
             "📖 الأوامر:\n\n"

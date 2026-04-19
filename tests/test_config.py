@@ -8,6 +8,41 @@ import threading
 CHAT_ID = 12345
 
 
+# ── Allowlist parser (TELEGRAM_CHAT_IDS) ──────────────────────────────────
+
+
+def test_parse_chat_entries_id_only():
+    from src.config import _parse_chat_entries
+
+    ids, labels = _parse_chat_entries("12345,67890")
+    assert ids == [12345, 67890]
+    assert labels == {}
+
+
+def test_parse_chat_entries_with_labels():
+    from src.config import _parse_chat_entries
+
+    ids, labels = _parse_chat_entries("12345:Admin,67890:Paolo Santoro")
+    assert ids == [12345, 67890]
+    assert labels == {12345: "Admin", 67890: "Paolo Santoro"}
+
+
+def test_parse_chat_entries_mixed():
+    from src.config import _parse_chat_entries
+
+    ids, labels = _parse_chat_entries("12345:Owner, 67890 ,99999:Alena")
+    assert ids == [12345, 67890, 99999]
+    assert labels == {12345: "Owner", 99999: "Alena"}
+
+
+def test_parse_chat_entries_skips_duplicates_and_invalid():
+    from src.config import _parse_chat_entries
+
+    ids, labels = _parse_chat_entries("12345:A,,abc:X,12345:Duplicate,67890")
+    assert ids == [12345, 67890]
+    assert labels == {12345: "A"}  # first label wins
+
+
 def test_load_categories_includes_defaults(tmp_knowledge_dir, chat_id):
     """All default categories always present."""
     from src.config import _DEFAULT_CATEGORIES, ensure_user_dirs, load_categories

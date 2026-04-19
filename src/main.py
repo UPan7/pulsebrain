@@ -9,6 +9,7 @@ from src.config import (
     OPENROUTER_API_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_IDS,
+    chat_label,
     ensure_user_dirs,
     logger,
 )
@@ -52,9 +53,13 @@ def main() -> None:
     migrate_legacy_to_admin(ADMIN_CHAT_ID)
 
     logger.info(
-        "Allowed chat_ids: %s (admin=%s)",
-        TELEGRAM_CHAT_IDS,
-        ADMIN_CHAT_ID,
+        "Allowed users (%d): %s",
+        len(TELEGRAM_CHAT_IDS),
+        ", ".join(
+            f"{chat_label(cid)} [{cid}]"
+            + (" (admin)" if cid == ADMIN_CHAT_ID else "")
+            for cid in TELEGRAM_CHAT_IDS
+        ),
     )
     for chat_id in TELEGRAM_CHAT_IDS:
         ensure_user_dirs(chat_id)

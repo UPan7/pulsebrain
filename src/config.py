@@ -35,36 +35,57 @@ LEGACY_CATEGORIES_FILE = DATA_DIR / "categories.yml"
 
 
 # ── Environment ──────────────────────────────────────────────────────────────
-def _parse_chat_ids(raw: str) -> list[int]:
-    result: list[int] = []
+def _parse_chat_entries(raw: str) -> tuple[list[int], dict[int, str]]:
+    """Parse a comma-separated allowlist supporting optional ``id:Name`` labels.
+
+    Accepts each of:
+        "12345"                       → id only
+        "12345:Paolo Santoro"         → id + display label
+        "12345,67890:Alena,99999"     → mixed
+
+    Returns (ordered unique ids, ``{id: label}`` for those with labels).
+    """
+    ids: list[int] = []
+    labels: dict[int, str] = {}
     for part in raw.split(","):
         part = part.strip()
         if not part:
             continue
+        id_part, _, name_part = part.partition(":")
+        id_part = id_part.strip()
+        name_part = name_part.strip()
         try:
-            cid = int(part)
+            cid = int(id_part)
         except ValueError:
             continue
-        if cid > 0 and cid not in result:
-            result.append(cid)
-    return result
+        if cid <= 0 or cid in ids:
+            continue
+        ids.append(cid)
+        if name_part:
+            labels[cid] = name_part
+    return ids, labels
 
 
-def _resolve_allowed_chat_ids() -> list[int]:
+def _resolve_allowed_chat_ids() -> tuple[list[int], dict[int, str]]:
     """Prefer TELEGRAM_CHAT_IDS; fall back to legacy TELEGRAM_CHAT_ID."""
-    ids = _parse_chat_ids(os.environ.get("TELEGRAM_CHAT_IDS", ""))
+    ids, labels = _parse_chat_entries(os.environ.get("TELEGRAM_CHAT_IDS", ""))
     if ids:
-        return ids
+        return ids, labels
     legacy = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if legacy:
-        return _parse_chat_ids(legacy)
-    return []
+        return _parse_chat_entries(legacy)
+    return [], {}
 
 
 OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
 TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_IDS: list[int] = _resolve_allowed_chat_ids()
+TELEGRAM_CHAT_IDS, TELEGRAM_CHAT_LABELS = _resolve_allowed_chat_ids()
 ADMIN_CHAT_ID: int = TELEGRAM_CHAT_IDS[0] if TELEGRAM_CHAT_IDS else 0
+
+
+def chat_label(chat_id: int) -> str:
+    """Human-readable label for a chat_id (falls back to str(chat_id))."""
+    return TELEGRAM_CHAT_LABELS.get(chat_id, str(chat_id))
 
 CHECK_INTERVAL_MINUTES: int = int(os.environ.get("CHECK_INTERVAL_MINUTES", "30"))
 # Default minimum relevance for auto-fetched videos from subscribed channels.

@@ -100,7 +100,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Всё остаётся твоим — обычные markdown-файлы, никакого "
             "vendor lock-in.\n\n"
             "Давай потратим 3 минуты на настройку профиля — чтобы я оценивал "
-            "релевантность конкретно под тебя. /cancel — выйти в любой момент."
+            "релевантность конкретно под тебя. /help — все команды, "
+            "/cancel — выйти в любой момент."
         ),
         "help_text": (
             "📖 Команды:\n\n"
@@ -374,7 +375,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Everything stays yours — plain markdown files, no cloud "
             "lock-in.\n\n"
             "Let's take 3 minutes to set up your profile so I can score "
-            "relevance for what YOU actually care about. /cancel to stop."
+            "relevance for what YOU actually care about. /help for all "
+            "commands, /cancel to stop."
         ),
         "help_text": (
             "📖 Commands:\n\n"
@@ -652,7 +654,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Alles bleibt bei dir — einfache Markdown-Dateien, kein "
             "Cloud-Lock-in.\n\n"
             "Nehmen wir uns 3 Minuten für dein Profil, damit ich Relevanz "
-            "passend für DICH bewerte. /cancel zum Abbrechen."
+            "passend für DICH bewerte. /help für alle Befehle, /cancel "
+            "zum Abbrechen."
         ),
         "help_text": (
             "📖 Befehle:\n\n"
@@ -919,7 +922,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Tout reste à toi — de simples fichiers markdown, pas de "
             "lock-in cloud.\n\n"
             "Prenons 3 minutes pour configurer ton profil, que je puisse "
-            "évaluer la pertinence pour TOI. /cancel pour arrêter."
+            "évaluer la pertinence pour TOI. /help pour toutes les "
+            "commandes, /cancel pour arrêter."
         ),
         "help_text": (
             "📖 Commandes :\n\n"
@@ -1183,7 +1187,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Todo queda tuyo — archivos markdown simples, sin lock-in "
             "en la nube.\n\n"
             "Tres minutos configurando tu perfil para que yo mida la "
-            "relevancia según TÚ. /cancel para salir."
+            "relevancia según TÚ. /help para todos los comandos, "
+            "/cancel para salir."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1446,7 +1451,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Tutto rimane tuo — semplici file markdown, niente lock-in "
             "cloud.\n\n"
             "Tre minuti per configurare il profilo così posso valutare la "
-            "rilevanza per TE. /cancel per uscire."
+            "rilevanza per TE. /help per tutti i comandi, /cancel per "
+            "uscire."
         ),
         "help_text": (
             "📖 Comandi:\n\n"
@@ -1708,7 +1714,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 Tudo continua seu — arquivos markdown simples, sem "
             "lock-in na nuvem.\n\n"
             "Três minutos para configurar o perfil para eu avaliar a "
-            "relevância para VOCÊ. /cancel para sair."
+            "relevância para VOCÊ. /help para todos os comandos, "
+            "/cancel para sair."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1964,7 +1971,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 💬 用自然语言提问 — 我会在你的知识库里搜索并附上来源回答。\n"
             "• 📂 一切都是你的 — 简单的 markdown 文件，没有云端绑定。\n\n"
             "花 3 分钟设置个人资料，让我根据你来评估相关性。"
-            "/cancel 可以随时退出。"
+            "/help 查看所有命令，/cancel 可以随时退出。"
         ),
         "help_text": (
             "📖 命令：\n\n"
@@ -2214,7 +2221,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 📂 すべてあなたのもの — ただの markdown ファイル、クラウド"
             "ロックインはありません。\n\n"
             "3 分ほどでプロフィール設定をしましょう。あなたに合った関連性"
-            "評価ができます。/cancel でいつでも中止できます。"
+            "評価ができます。/help で全コマンド、/cancel でいつでも中止。"
         ),
         "help_text": (
             "📖 コマンド：\n\n"
@@ -2468,7 +2475,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "المصادر.\n"
             "• 📂 كل شيء يبقى لك — ملفات markdown بسيطة، بدون قفل سحابي.\n\n"
             "ثلاث دقائق لإعداد ملفك الشخصي حتى أقيس الملاءمة وفقاً لك "
-            "أنت. /cancel للإلغاء في أي وقت."
+            "أنت. /help لعرض كل الأوامر، /cancel للإلغاء في أي وقت."
         ),
         "help_text": (
             "📖 الأوامر:\n\n"

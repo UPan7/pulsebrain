@@ -106,6 +106,8 @@ def _process_content(
         "topics": summary.get("topics", []),
         "summary_bullets": summary.get("summary_bullets", []),
         "detailed_notes": summary.get("detailed_notes", ""),
+        "deep_dive": summary.get("deep_dive"),
+        "length_mode": summary.get("length_mode", ""),
         "key_insights": summary.get("key_insights", []),
         "action_items": summary.get("action_items", []),
         "author": locals().get("author") if source_type == "web_article" else None,

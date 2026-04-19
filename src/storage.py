@@ -165,6 +165,7 @@ def save_entry(
     author: str | None = None,
     sitename: str | None = None,
     raw_text: str | None = None,
+    deep_dive: list[dict[str, str]] | None = None,
     update_index: bool = True,
 ) -> Path:
     """Save a knowledge entry for ``chat_id`` as a .md file and update their index.
@@ -172,6 +173,12 @@ def save_entry(
     If *raw_text* is provided (the original transcript or article body),
     it is written verbatim to a sibling ``{stem}.source.txt`` — the
     lossless source — alongside the .md summary.
+
+    *deep_dive* is an optional list of ``{"heading": str, "body": str}``
+    dicts. When present and non-empty, a ``## Deep Dive`` section is
+    rendered between Detailed Notes and Key Insights. Entries saved
+    before this feature (or from short/medium summaries) pass ``None``
+    and simply omit the section — no migration needed.
     """
     _validate_category(category)
     file_path = _build_file_path(chat_id, category, source_name, title, date_str)
@@ -206,6 +213,21 @@ def save_entry(
     lines.append("")
     lines.append(detailed_notes)
     lines.append("")
+
+    if deep_dive:
+        lines.append("## Deep Dive")
+        lines.append("")
+        for section in deep_dive:
+            heading = (section.get("heading") or "").strip()
+            body = (section.get("body") or "").strip()
+            if not heading and not body:
+                continue
+            if heading:
+                lines.append(f"### {heading}")
+                lines.append("")
+            if body:
+                lines.append(body)
+                lines.append("")
 
     lines.append("## Key Insights")
     lines.append("")

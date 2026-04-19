@@ -324,6 +324,74 @@ def test_commit_pending_writes_source_sibling(tmp_knowledge_dir, chat_id, sample
     assert sibling.read_text("utf-8") == transcript
 
 
+# ── deep_dive + length_mode roundtrip ─────────────────────────────────────
+
+
+def test_stage_pending_persists_deep_dive_and_length_mode(tmp_knowledge_dir, chat_id, sample_pending_kwargs):
+    from src.pending import init_pending, stage_pending, get_pending
+
+    init_pending(chat_id)
+    deep_dive = [{"heading": "Gotchas", "body": "Cloudflare blocks direct curl; use trafilatura fetch."}]
+    pending_id = stage_pending(
+        chat_id,
+        **sample_pending_kwargs,
+        deep_dive=deep_dive,
+        length_mode="long",
+    )
+    entry = get_pending(chat_id, pending_id)
+    assert entry["deep_dive"] == deep_dive
+    assert entry["length_mode"] == "long"
+
+
+def test_stage_pending_deep_dive_defaults_to_none(tmp_knowledge_dir, chat_id, sample_pending_kwargs):
+    from src.pending import init_pending, stage_pending, get_pending
+
+    init_pending(chat_id)
+    pending_id = stage_pending(chat_id, **sample_pending_kwargs)
+    entry = get_pending(chat_id, pending_id)
+    assert entry["deep_dive"] is None
+    assert entry["length_mode"] == ""
+
+
+def test_commit_pending_passes_deep_dive_to_markdown(tmp_knowledge_dir, chat_id, sample_pending_kwargs):
+    from src.pending import init_pending, stage_pending, commit_pending
+    from src.storage import init_processed
+
+    init_processed(chat_id)
+    init_pending(chat_id)
+    deep_dive = [
+        {"heading": "Architecture", "body": "Stage-1 writes metadata, Stage-2 enriches with transcripts."},
+        {"heading": "Schema", "body": "processed.json keys are yt:{video_id} or web:{sha256(url)[:16]}."},
+    ]
+    pending_id = stage_pending(
+        chat_id,
+        **sample_pending_kwargs,
+        deep_dive=deep_dive,
+        length_mode="long",
+    )
+    file_path = commit_pending(chat_id, pending_id)
+
+    md = Path(file_path).read_text("utf-8")
+    assert "## Deep Dive" in md
+    assert "### Architecture" in md
+    assert "Stage-1 writes metadata" in md
+    assert "### Schema" in md
+
+
+def test_commit_pending_without_deep_dive_omits_section(tmp_knowledge_dir, chat_id, sample_pending_kwargs):
+    """Pending entries staged before deep_dive existed still commit cleanly."""
+    from src.pending import init_pending, stage_pending, commit_pending
+    from src.storage import init_processed
+
+    init_processed(chat_id)
+    init_pending(chat_id)
+    pending_id = stage_pending(chat_id, **sample_pending_kwargs)
+    file_path = commit_pending(chat_id, pending_id)
+
+    md = Path(file_path).read_text("utf-8")
+    assert "## Deep Dive" not in md
+
+
 # ── Rejected log ───────────────────────────────────────────────────────────
 
 

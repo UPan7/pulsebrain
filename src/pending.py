@@ -116,12 +116,21 @@ def stage_pending(
     author: str | None = None,
     sitename: str | None = None,
     raw_text: str | None = None,
+    deep_dive: list[dict[str, str]] | None = None,
+    length_mode: str = "",
 ) -> str:
     """Stage a new entry awaiting ``chat_id``'s approval. Returns pending_id.
 
     *raw_text* is the lossless original (transcript or article body). It is
     inlined in pending.json so :func:`commit_pending` can write the source
     sibling alongside the .md when the user approves.
+
+    *deep_dive* is an optional list of ``{heading, body}`` dicts rendered
+    as a new section in the saved markdown. Only long/xlong summarize
+    modes populate it; callers from older pipelines pass ``None``.
+
+    *length_mode* records which length budget the summarizer used
+    ("short"/"medium"/"long"/"xlong") for analytics and debugging.
     """
     _validate_category(category)
     pending_id = _make_pending_id(content_id)
@@ -140,6 +149,8 @@ def stage_pending(
         "topics": topics,
         "summary_bullets": summary_bullets,
         "detailed_notes": detailed_notes,
+        "deep_dive": deep_dive,
+        "length_mode": length_mode,
         "key_insights": key_insights,
         "action_items": action_items,
         "author": author,
@@ -223,6 +234,7 @@ def commit_pending(chat_id: int, pending_id: str) -> Path | None:
         author=entry_snapshot.get("author"),
         sitename=entry_snapshot.get("sitename"),
         raw_text=entry_snapshot.get("raw_text"),
+        deep_dive=entry_snapshot.get("deep_dive"),
     )
 
     mark_processed(chat_id, entry_snapshot["content_id"], status="ok")

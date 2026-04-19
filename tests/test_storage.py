@@ -133,6 +133,69 @@ def test_save_entry_default_updates_index(tmp_knowledge_dir, chat_id, sample_ent
         mock_idx.assert_called_once()
 
 
+def test_save_entry_without_deep_dive_omits_section(tmp_knowledge_dir, chat_id, sample_entry_kwargs):
+    """Backwards-compat: entries with no deep_dive render no Deep Dive section."""
+    from src.storage import save_entry
+
+    path = save_entry(chat_id, **sample_entry_kwargs)
+    content = Path(path).read_text("utf-8")
+    assert "## Deep Dive" not in content
+    # Detailed Notes and Key Insights remain adjacent as before.
+    detailed_idx = content.index("## Detailed Notes")
+    insights_idx = content.index("## Key Insights")
+    assert detailed_idx < insights_idx
+    assert "## Deep Dive" not in content[detailed_idx:insights_idx]
+
+
+def test_save_entry_with_deep_dive_renders_section(tmp_knowledge_dir, chat_id, sample_entry_kwargs):
+    from src.storage import save_entry
+
+    deep_dive = [
+        {"heading": "Architecture decisions", "body": "Chose PostgreSQL 17 over SQLite for concurrent writes."},
+        {"heading": "Gotchas", "body": "feedparser yt_videoid key is empty for Shorts; filter before lookup."},
+        {"heading": "Playbook", "body": "docker compose up -d, then python -m scripts.seed_channels."},
+    ]
+    path = save_entry(chat_id, **sample_entry_kwargs, deep_dive=deep_dive)
+    content = Path(path).read_text("utf-8")
+
+    assert "## Deep Dive" in content
+    assert "### Architecture decisions" in content
+    assert "Chose PostgreSQL 17" in content
+    assert "### Gotchas" in content
+    assert "feedparser yt_videoid" in content
+    assert "### Playbook" in content
+
+    # Deep Dive must sit between Detailed Notes and Key Insights.
+    dd_idx = content.index("## Deep Dive")
+    assert content.index("## Detailed Notes") < dd_idx < content.index("## Key Insights")
+
+
+def test_save_entry_with_empty_deep_dive_list_omits_section(tmp_knowledge_dir, chat_id, sample_entry_kwargs):
+    """Empty list is treated the same as None — no empty section header."""
+    from src.storage import save_entry
+
+    path = save_entry(chat_id, **sample_entry_kwargs, deep_dive=[])
+    content = Path(path).read_text("utf-8")
+    assert "## Deep Dive" not in content
+
+
+def test_save_entry_deep_dive_skips_fully_blank_sections(tmp_knowledge_dir, chat_id, sample_entry_kwargs):
+    """A deep_dive section with blank heading AND body is dropped silently."""
+    from src.storage import save_entry
+
+    deep_dive = [
+        {"heading": "Real section", "body": "Real content about Docker networking."},
+        {"heading": "", "body": ""},
+        {"heading": "Another", "body": "More content."},
+    ]
+    path = save_entry(chat_id, **sample_entry_kwargs, deep_dive=deep_dive)
+    content = Path(path).read_text("utf-8")
+    assert "### Real section" in content
+    assert "### Another" in content
+    # No triple-blank artifact between sections.
+    assert "\n\n\n\n" not in content
+
+
 def test_batch_save_single_index_update(tmp_knowledge_dir, chat_id, sample_entry_kwargs):
     from src.config import user_knowledge_dir
     from src.storage import _update_index, save_entry

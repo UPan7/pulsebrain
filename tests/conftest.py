@@ -212,7 +212,12 @@ def allowlist_env(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture()
 def sample_summary_dict() -> dict[str, Any]:
-    """Canonical summarize_content() output for reuse across tests."""
+    """Canonical summarize_content() output for reuse across tests.
+
+    length_mode tracks the length budget the summarizer picked
+    (short/medium/long/xlong). For the tiny ``"content"`` / ``"c"``
+    inputs used in these tests, mode is always "short".
+    """
     return {
         "summary_bullets": ["Bullet one", "Bullet two"],
         "detailed_notes": "Detailed notes paragraph.",
@@ -220,6 +225,7 @@ def sample_summary_dict() -> dict[str, Any]:
         "action_items": ["Action one"],
         "topics": ["ai", "agents"],
         "relevance_score": 8,
+        "length_mode": "short",
     }
 
 

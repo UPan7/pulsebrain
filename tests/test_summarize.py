@@ -161,8 +161,11 @@ def test_summarize_prompt_enforces_humanizer_voice():
     assert "Active voice" in SUMMARIZE_PROMPT
     assert "BANNED phrases" in SUMMARIZE_PROMPT
     assert "LENGTH BUDGET" in SUMMARIZE_PROMPT
-    assert "2 minutes" in SUMMARIZE_PROMPT
-    assert "500 words" in SUMMARIZE_PROMPT
+    # LENGTH BUDGET scales with content length — the block is rendered
+    # per call via {length_budget_block}, so the template carries the
+    # placeholder rather than hardcoded word/minute counts.
+    assert "{length_budget_block}" in SUMMARIZE_PROMPT
+    assert "RELEVANCE OVERRIDE" in SUMMARIZE_PROMPT
 
 
 def test_summarize_prompt_has_anchor_rubric():
@@ -341,6 +344,148 @@ def test_language_directives_cover_all_supported_langs():
     for code in SUPPORTED_LANGS:
         assert code in LANGUAGE_DIRECTIVES, f"LANGUAGE_DIRECTIVES missing: {code}"
         assert LANGUAGE_DIRECTIVES[code]
+
+
+# ── Adaptive length budget ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("word_count,expected_mode", [
+    (0, "short"),
+    (500, "short"),
+    (1499, "short"),
+    (1500, "medium"),
+    (2500, "medium"),
+    (3499, "medium"),
+    (3500, "long"),
+    (5000, "long"),
+    (6999, "long"),
+    (7000, "xlong"),
+    (15000, "xlong"),
+    (100000, "xlong"),
+])
+def test_pick_mode_thresholds(word_count, expected_mode):
+    from src.summarize import _pick_mode
+
+    assert _pick_mode(word_count) == expected_mode
+
+
+def test_render_budget_block_short_has_no_deep_dive():
+    from src.summarize import _render_budget_block
+
+    block = _render_budget_block("short")
+    assert "LENGTH MODE: short" in block
+    assert "3-5 bullets" in block
+    assert "200-300 words" in block
+    assert "deep_dive: null" in block
+
+
+def test_render_budget_block_long_requires_deep_dive():
+    from src.summarize import _render_budget_block
+
+    block = _render_budget_block("long")
+    assert "LENGTH MODE: long" in block
+    assert "500-700 words" in block
+    assert "deep_dive: REQUIRED" in block
+    assert "3 subsections" in block
+
+
+def test_render_budget_block_xlong_larger_deep_dive():
+    from src.summarize import _render_budget_block
+
+    block = _render_budget_block("xlong")
+    assert "LENGTH MODE: xlong" in block
+    assert "600-900 words" in block
+    assert "4 subsections" in block
+
+
+def test_summarize_injects_mode_matching_word_count(tmp_knowledge_dir, chat_id, sample_summary_dict):
+    from src.summarize import summarize_content
+
+    # ~4000 words of content → long mode
+    long_content = ("word " * 4000).strip()
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content(chat_id, long_content, "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "LENGTH MODE: long" in prompt
+    assert "deep_dive: REQUIRED" in prompt
+    assert "LENGTH MODE: short" not in prompt
+
+
+def test_summarize_short_content_uses_short_mode(tmp_knowledge_dir, chat_id, sample_summary_dict):
+    from src.summarize import summarize_content
+
+    client = _make_client(json.dumps(sample_summary_dict))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        summarize_content(chat_id, "just a few words of content", "T", "S", "youtube_video")
+
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "LENGTH MODE: short" in prompt
+    assert "deep_dive: null" in prompt
+
+
+def test_summarize_tags_length_mode_on_result_when_model_omits_it(tmp_knowledge_dir, chat_id):
+    """Model responses missing length_mode get it backfilled from the picker."""
+    from src.summarize import summarize_content
+
+    # Response without length_mode — simulates a model that ignored the schema hint.
+    model_response = {
+        "relevance_score": 7,
+        "topics": ["ai"],
+        "summary_bullets": ["b1"],
+        "detailed_notes": "n",
+        "deep_dive": None,
+        "key_insights": ["i1"],
+        "action_items": ["a1"],
+    }
+    # ~2000 words → medium
+    medium_content = ("word " * 2000).strip()
+    client = _make_client(json.dumps(model_response))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        result = summarize_content(chat_id, medium_content, "T", "S", "youtube_video")
+
+    assert result["length_mode"] == "medium"
+
+
+def test_summarize_preserves_model_length_mode_override(tmp_knowledge_dir, chat_id):
+    """If the model returns its own length_mode (e.g. after relevance collapse), keep it."""
+    from src.summarize import summarize_content
+
+    model_response = {
+        "relevance_score": 2,
+        "topics": ["misc"],
+        "summary_bullets": ["b"],
+        "detailed_notes": "n",
+        "deep_dive": None,
+        "key_insights": ["i"],
+        "action_items": ["a"],
+        "length_mode": "short",  # model collapsed due to low relevance
+    }
+    long_content = ("word " * 5000).strip()  # would have been "long"
+    client = _make_client(json.dumps(model_response))
+    with patch("src.summarize.openai.OpenAI", return_value=client):
+        result = summarize_content(chat_id, long_content, "T", "S", "youtube_video")
+
+    assert result["length_mode"] == "short"
+
+
+def test_summarize_prompt_includes_relevance_override_block():
+    from src.summarize import SUMMARIZE_PROMPT
+
+    assert "RELEVANCE OVERRIDE" in SUMMARIZE_PROMPT
+    assert "relevance ≤ 4" in SUMMARIZE_PROMPT
+    assert "COLLAPSE" in SUMMARIZE_PROMPT
+
+
+def test_summarize_output_schema_lists_deep_dive_field():
+    from src.summarize import SUMMARIZE_PROMPT
+
+    # The JSON schema example in the prompt must advertise deep_dive so
+    # the model knows the field exists and how it's shaped.
+    assert '"deep_dive"' in SUMMARIZE_PROMPT
+    assert '"heading"' in SUMMARIZE_PROMPT
+    assert '"body"' in SUMMARIZE_PROMPT
 
 
 @pytest.mark.parametrize("lang,expected_phrase", [

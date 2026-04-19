@@ -129,6 +129,22 @@ def tmp_user(tmp_knowledge_dir: Path, chat_id: int):
     return chat_id
 
 
+@pytest.fixture(autouse=True)
+def _reset_openai_client_caches(monkeypatch: pytest.MonkeyPatch):
+    """Drop the module-level cached OpenAI clients between tests.
+
+    categorize / summarize memoize `openai.OpenAI()` at module scope to reuse
+    the httpx pool in production. Tests patch `openai.OpenAI` inside a context
+    manager, so the cached instance from a previous test would otherwise leak
+    into the next.
+    """
+    import src.categorize
+    import src.summarize
+
+    monkeypatch.setattr(src.categorize, "_client_cache", None, raising=False)
+    monkeypatch.setattr(src.summarize, "_client_cache", None, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # OpenAI / OpenRouter mock
 # ---------------------------------------------------------------------------

@@ -8,13 +8,27 @@ from typing import Any
 
 import openai
 
-from src.config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
+from src.config import (
+    LLM_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_SEMAPHORE,
+)
 
 logger = logging.getLogger(__name__)
 
 
+_client_cache: openai.OpenAI | None = None
+
+
 def _client() -> openai.OpenAI:
-    return openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+    """Lazy-cached OpenAI client — reuses the httpx session across calls."""
+    global _client_cache
+    if _client_cache is None:
+        _client_cache = openai.OpenAI(
+            base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY
+        )
+    return _client_cache
 
 # Language directive injected into SUMMARIZE_PROMPT. Determines what
 # language the bullets / notes / insights / action_items are written in.
@@ -241,15 +255,21 @@ def summarize_content(
         content = content[:max_content_len] + "\n\n[... content truncated ...]"
 
     # Build the USER CONTEXT block + pick the language directive from
-    # the caller's profile. Both are best-effort — a missing profile
-    # falls through to neutral defaults so the summarizer still works.
-    from src.profile import build_relevance_context, format_relevance_context
+    # the caller's profile. A genuine failure (parse error, disk error)
+    # is logged loudly with chat_id so it doesn't silently degrade the
+    # user's language / persona context across every summary. Language
+    # at least always comes from get_language(), which is bulletproof.
+    from src.profile import build_relevance_context, format_relevance_context, get_language
 
     try:
         ctx = build_relevance_context(chat_id)
     except Exception as exc:
-        logger.warning("Failed to build relevance context: %s", exc)
-        ctx = {"language": "en"}
+        logger.error(
+            "Failed to build relevance context for chat_id=%s: %s — "
+            "falling back to language-only context",
+            chat_id, exc,
+        )
+        ctx = {"language": get_language(chat_id)}
 
     user_context_block = format_relevance_context(ctx)
     language = ctx.get("language", "en")
@@ -271,11 +291,12 @@ def summarize_content(
 
     for attempt in range(2):
         try:
-            response = client.chat.completions.create(
-                model=LLM_MODEL,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            with OPENROUTER_SEMAPHORE:
+                response = client.chat.completions.create(
+                    model=LLM_MODEL,
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
             raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             # Tag the picked mode on the response so downstream code can
@@ -346,14 +367,15 @@ def answer_question(chat_id: int, question: str, sources: list[dict[str, str]]) 
     user_prompt = QUESTION_USER_PROMPT.format(context=context, question=question)
 
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            max_tokens=2048,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        with OPENROUTER_SEMAPHORE:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                max_tokens=2048,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
         return response.choices[0].message.content.strip()
     except Exception as exc:
         logger.error("Question answering failed: %s", exc)

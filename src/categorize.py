@@ -8,9 +8,31 @@ from difflib import SequenceMatcher
 
 import openai
 
-from src.config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, load_categories
+from src.config import (
+    LLM_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_SEMAPHORE,
+    load_categories,
+)
 
 logger = logging.getLogger(__name__)
+
+_client_cache: openai.OpenAI | None = None
+
+
+def _get_client() -> openai.OpenAI:
+    """Lazy-cached OpenAI client — avoids rebuilding the httpx session per call.
+
+    Kept as a module-level singleton so the underlying connection pool is
+    reused across categorize_content calls. Tests reset this in conftest.
+    """
+    global _client_cache
+    if _client_cache is None:
+        _client_cache = openai.OpenAI(
+            base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY
+        )
+    return _client_cache
 
 _AUTO_MERGE_THRESHOLD = 0.75
 _FALLBACK_SLUG = "uncategorized"
@@ -49,11 +71,12 @@ def _generate_fresh_category(
     """
     prompt = GENERATE_CATEGORY_PROMPT.format(title=title, content_preview=content[:500])
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            max_tokens=80,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        with OPENROUTER_SEMAPHORE:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                max_tokens=80,
+                messages=[{"role": "user", "content": prompt}],
+            )
         raw = response.choices[0].message.content.strip()
         start, end = raw.find("{"), raw.rfind("}")
         if start == -1 or end == -1 or end <= start:
@@ -94,7 +117,7 @@ def categorize_content(chat_id: int, title: str, content: str) -> tuple[str, boo
     enough to auto-merge into an existing one.
     """
     categories = load_categories(chat_id)
-    client = openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+    client = _get_client()
 
     cat_lines = "\n".join(f"- {slug} ({desc})" for slug, desc in categories.items())
     prompt = CATEGORIZE_PROMPT.format(
@@ -104,11 +127,12 @@ def categorize_content(chat_id: int, title: str, content: str) -> tuple[str, boo
     )
 
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            max_tokens=50,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        with OPENROUTER_SEMAPHORE:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                max_tokens=50,
+                messages=[{"role": "user", "content": prompt}],
+            )
         slug = response.choices[0].message.content.strip().lower().replace(" ", "-")
 
         # Exact hit on an existing slug — the common case.

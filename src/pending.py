@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -68,6 +69,20 @@ def _flush(chat_id: int) -> None:
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(_pending_caches[chat_id], f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, path)
+
+
+def prune_pending_state(valid_ids: Iterable[int]) -> int:
+    """Drop pending caches + locks for chat_ids outside ``valid_ids``."""
+    keep = set(valid_ids)
+    pruned = 0
+    with _pending_meta_lock:
+        for cid in [c for c in _pending_caches if c not in keep]:
+            _pending_caches.pop(cid, None)
+            pruned += 1
+        for cid in [c for c in _pending_locks if c not in keep]:
+            del _pending_locks[cid]
+            pruned += 1
+    return pruned
 
 
 def init_pending(chat_id: int) -> None:

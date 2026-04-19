@@ -106,3 +106,55 @@ def test_allowlist_rejects_unknown_chat_id(allowlist_env, mock_telegram_update):
 
     assert _authorized(allowed) is True
     assert _authorized(denied) is False
+
+
+# Every command handler registered by create_bot_application() must reject
+# unauthorized updates. A bug that forgets @authorized on a new handler
+# would break tenant isolation — this parametrized test is the safety net.
+_AUTH_GUARDED_HANDLERS = [
+    "cmd_start", "cmd_help", "cmd_onboarding", "cmd_language",
+    "cmd_add", "cmd_remove", "cmd_list", "cmd_categories",
+    "cmd_search", "cmd_recent", "cmd_get", "cmd_status",
+    "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected", "cmd_cancel",
+]
+
+
+@pytest.mark.parametrize("handler_name", _AUTH_GUARDED_HANDLERS)
+async def test_handler_rejects_unauthorized_chat(
+    handler_name, allowlist_env, mock_telegram_update, mock_telegram_context
+):
+    """Every registered command handler must drop updates from outside the allowlist."""
+    import src.telegram_bot as bot
+    handler = getattr(bot, handler_name)
+
+    update = mock_telegram_update(chat_id=99999)  # not in allowlist
+    context = mock_telegram_context()
+
+    await handler(update, context)
+
+    update.message.reply_text.assert_not_called()
+
+
+async def test_scheduler_isolates_failing_user(allowlist_env, monkeypatch):
+    """One user's scheduled check raising must not abort other users' checks."""
+    import asyncio
+    import src.scheduler as sched
+
+    calls: list[int] = []
+
+    async def fake_run_channel_check(chat_id, app=None):
+        calls.append(chat_id)
+        if chat_id == 12345:
+            raise RuntimeError("simulated failure for chat 12345")
+        return 0
+
+    monkeypatch.setattr(sched, "run_channel_check", fake_run_channel_check)
+
+    fake_app = object()
+    scheduler = sched.setup_scheduler(fake_app)
+    # Pull the async callable APScheduler would invoke and run it directly.
+    job_func = scheduler.get_job("channel_check").func
+    await job_func()
+
+    # Both users must have been attempted; the failing one must not block the other.
+    assert set(calls) == {12345, 67890}

@@ -12,6 +12,7 @@ from src.config import (
     chat_label,
     ensure_user_dirs,
     logger,
+    prune_category_state,
 )
 
 
@@ -44,13 +45,22 @@ def main() -> None:
     _ensure_directories()
 
     from src.migration import migrate_legacy_to_admin
-    from src.pending import init_pending
-    from src.profile import init_profile
+    from src.pending import init_pending, prune_pending_state
+    from src.profile import init_profile, prune_profile_state
     from src.scheduler import setup_scheduler
-    from src.storage import init_processed
+    from src.storage import init_processed, prune_storage_state
     from src.telegram_bot import create_bot_application
 
     migrate_legacy_to_admin(ADMIN_CHAT_ID)
+
+    pruned = (
+        prune_category_state(TELEGRAM_CHAT_IDS)
+        + prune_storage_state(TELEGRAM_CHAT_IDS)
+        + prune_pending_state(TELEGRAM_CHAT_IDS)
+        + prune_profile_state(TELEGRAM_CHAT_IDS)
+    )
+    if pruned:
+        logger.info("Pruned %d stale per-user registry entries", pruned)
 
     logger.info(
         "Allowed users (%d): %s",

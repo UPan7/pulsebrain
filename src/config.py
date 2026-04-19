@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any
 
 import yaml
@@ -105,6 +106,13 @@ PROXY_CREDENTIALS_FILE = BASE_DIR / "proxy-credentials"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "openai/gpt-5.4-nano"
 
+# Global cap on concurrent OpenRouter calls across all users. Prevents a
+# scheduler cycle with many users * many channels from slamming the API
+# with hundreds of requests in parallel. Acquired from sync LLM callers
+# (summarize, categorize) running inside asyncio.to_thread workers.
+OPENROUTER_CONCURRENCY: int = int(os.environ.get("OPENROUTER_CONCURRENCY", "5"))
+OPENROUTER_SEMAPHORE = threading.Semaphore(OPENROUTER_CONCURRENCY)
+
 # ── Per-user path helpers ───────────────────────────────────────────────────
 def user_dir(chat_id: int) -> Path:
     return USERS_DIR / str(chat_id)
@@ -170,6 +178,20 @@ def load_categories(chat_id: int) -> dict[str, str]:
             return {}
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
+
+
+def prune_category_state(valid_ids: Iterable[int]) -> int:
+    """Drop categories locks for chat_ids no longer in the allowlist.
+
+    Keeps the lock registry bounded across config changes / user revocation.
+    Returns the number of entries pruned.
+    """
+    keep = set(valid_ids)
+    with _categories_meta_lock:
+        stale = [cid for cid in _categories_locks if cid not in keep]
+        for cid in stale:
+            del _categories_locks[cid]
+    return len(stale)
 
 
 def add_category(chat_id: int, slug: str, description: str) -> None:

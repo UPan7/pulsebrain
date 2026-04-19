@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 import time as _time
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -493,35 +494,73 @@ def _parse_entry_metadata(chat_id: int, md_file: Path) -> dict[str, str] | None:
 # ── Entry cache (TTL-based, per-user) ───────────────────────────────────────
 
 _entry_caches: dict[int, tuple[list[dict[str, str]], float]] = {}
+_entry_cache_locks: dict[int, threading.Lock] = {}
+_entry_cache_meta_lock = threading.Lock()
 _ENTRY_CACHE_TTL: float = 60.0  # seconds
+
+
+def _entry_cache_lock_for(chat_id: int) -> threading.Lock:
+    with _entry_cache_meta_lock:
+        lock = _entry_cache_locks.get(chat_id)
+        if lock is None:
+            lock = threading.Lock()
+            _entry_cache_locks[chat_id] = lock
+        return lock
 
 
 def _get_all_entries(chat_id: int) -> list[dict[str, str]]:
     """Return all parsed entries for ``chat_id``, using cache if still valid."""
-    now = _time.monotonic()
-    cached = _entry_caches.get(chat_id)
-    if cached is not None:
-        entries_cached, cached_at = cached
-        if (now - cached_at) < _ENTRY_CACHE_TTL:
-            return entries_cached
+    with _entry_cache_lock_for(chat_id):
+        now = _time.monotonic()
+        cached = _entry_caches.get(chat_id)
+        if cached is not None:
+            entries_cached, cached_at = cached
+            if (now - cached_at) < _ENTRY_CACHE_TTL:
+                return entries_cached
 
-    root = user_knowledge_dir(chat_id)
-    entries: list[dict[str, str]] = []
-    if root.exists():
-        for md_file in root.rglob("*.md"):
-            if md_file.name == "_index.md":
-                continue
-            info = _parse_entry_metadata(chat_id, md_file)
-            if info:
-                entries.append(info)
+        root = user_knowledge_dir(chat_id)
+        entries: list[dict[str, str]] = []
+        if root.exists():
+            for md_file in root.rglob("*.md"):
+                if md_file.name == "_index.md":
+                    continue
+                info = _parse_entry_metadata(chat_id, md_file)
+                if info:
+                    entries.append(info)
 
-    _entry_caches[chat_id] = (entries, now)
-    return entries
+        _entry_caches[chat_id] = (entries, now)
+        return entries
 
 
 def _invalidate_entry_cache(chat_id: int) -> None:
     """Reset this user's entry cache so next access re-scans."""
-    _entry_caches.pop(chat_id, None)
+    with _entry_cache_lock_for(chat_id):
+        _entry_caches.pop(chat_id, None)
+
+
+def prune_storage_state(valid_ids: Iterable[int]) -> int:
+    """Drop processed + entry caches and locks for chat_ids outside ``valid_ids``.
+
+    Called at startup to bound memory after the allowlist changes. Returns
+    total number of cache/lock slots pruned.
+    """
+    keep = set(valid_ids)
+    pruned = 0
+    with _processed_meta_lock:
+        for cid in [c for c in _processed_caches if c not in keep]:
+            _processed_caches.pop(cid, None)
+            pruned += 1
+        for cid in [c for c in _processed_locks if c not in keep]:
+            del _processed_locks[cid]
+            pruned += 1
+    with _entry_cache_meta_lock:
+        for cid in [c for c in _entry_caches if c not in keep]:
+            _entry_caches.pop(cid, None)
+            pruned += 1
+        for cid in [c for c in _entry_cache_locks if c not in keep]:
+            del _entry_cache_locks[cid]
+            pruned += 1
+    return pruned
 
 
 # ── Search ───────────────────────────────────────────────────────────────────

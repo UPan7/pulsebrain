@@ -186,16 +186,24 @@ def setup_scheduler(app):
 
     scheduler = AsyncIOScheduler()
 
+    async def _run_one(chat_id: int) -> None:
+        try:
+            count = await run_channel_check(chat_id, app=app)
+            if count > 0:
+                logger.info("[chat_id=%s] Scheduled check found %d new videos", chat_id, count)
+        except Exception as exc:
+            # One user's failure must not break the others — isolated per task.
+            logger.error("[chat_id=%s] Scheduled check failed: %s", chat_id, exc)
+
     async def scheduled_check():
         logger.info("Scheduled channel check starting for %d users...", len(TELEGRAM_CHAT_IDS))
-        for chat_id in TELEGRAM_CHAT_IDS:
-            try:
-                count = await run_channel_check(chat_id, app=app)
-                if count > 0:
-                    logger.info("[chat_id=%s] Scheduled check found %d new videos", chat_id, count)
-            except Exception as exc:
-                # One user's failure must not break the others.
-                logger.error("[chat_id=%s] Scheduled check failed: %s", chat_id, exc)
+        # Run per-user checks concurrently. LLM calls inside are bounded by
+        # OPENROUTER_SEMAPHORE in summarize/categorize, so a burst of users
+        # cannot exceed the global OpenRouter concurrency cap.
+        await asyncio.gather(
+            *(_run_one(cid) for cid in TELEGRAM_CHAT_IDS),
+            return_exceptions=False,
+        )
 
     scheduler.add_job(
         scheduled_check,

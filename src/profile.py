@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Iterable
 from typing import Any
 
 import yaml
@@ -113,6 +114,20 @@ def _flush(chat_id: int) -> None:
 
 
 # ── Public API ────────────────────────────────────────────────────────────
+
+
+def prune_profile_state(valid_ids: Iterable[int]) -> int:
+    """Drop profile caches + locks for chat_ids outside ``valid_ids``."""
+    keep = set(valid_ids)
+    pruned = 0
+    with _profile_meta_lock:
+        for cid in [c for c in _profile_caches if c not in keep]:
+            _profile_caches.pop(cid, None)
+            pruned += 1
+        for cid in [c for c in _profile_locks if c not in keep]:
+            del _profile_locks[cid]
+            pruned += 1
+    return pruned
 
 
 def init_profile(chat_id: int) -> None:

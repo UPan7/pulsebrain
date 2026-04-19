@@ -1,25 +1,26 @@
-"""Tests for src.pipeline — shared helper, deduplication, logger fix."""
+"""Tests for src.pipeline — per-user shared helper, deduplication, logger."""
 
 from __future__ import annotations
 
-import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def _isolate_storage(tmp_knowledge_dir):
-    """All pipeline tests use isolated storage."""
+def _isolate_storage(tmp_knowledge_dir, chat_id):
+    """All pipeline tests use isolated per-user storage."""
+    from src.config import ensure_user_dirs
     from src.storage import init_processed
-    init_processed()
+
+    ensure_user_dirs(chat_id)
+    init_processed(chat_id)
 
 
 # ── Logger correctness ─────────────────────────────────────────────────────
 
 
 def test_pipeline_logger_name():
-    """Pipeline logger should be 'src.pipeline', not 'pulsebrain'."""
     import src.pipeline
     assert src.pipeline.logger.name == "src.pipeline"
 
@@ -28,48 +29,41 @@ def test_pipeline_logger_name():
 
 
 def test_process_youtube_delegates_to_shared():
-    """process_youtube_video uses the shared _process_content helper."""
     import src.pipeline
-    assert hasattr(src.pipeline, "_process_content"), \
-        "Expected shared _process_content helper to exist"
-
-
-def test_process_web_delegates_to_shared():
-    """process_web_article uses the shared _process_content helper."""
-    import src.pipeline
-    # Both public functions should exist and call _process_content
     assert hasattr(src.pipeline, "_process_content")
 
 
-def test_shared_skips_already_processed():
-    """Already-processed content returns error dict without calling extractors."""
+def test_process_web_delegates_to_shared():
+    import src.pipeline
+    assert hasattr(src.pipeline, "_process_content")
+
+
+def test_shared_skips_already_processed(chat_id):
     from src.pipeline import process_youtube_video
     from src.storage import mark_processed, make_content_id
 
-    mark_processed(make_content_id("youtube_video", "dQw4w9WgXcQ"))
+    mark_processed(chat_id, make_content_id("youtube_video", "dQw4w9WgXcQ"))
 
     with patch("src.pipeline.get_transcript") as mock_t:
-        result = process_youtube_video("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert result is not None
         assert "error" in result
         mock_t.assert_not_called()
 
 
-def test_shared_returns_error_on_extract_failure():
-    """Extractor returning None → error dict."""
+def test_shared_returns_error_on_extract_failure(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
         patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
         patch("src.pipeline.get_transcript", return_value=None),
     ):
-        result = process_youtube_video("https://www.youtube.com/watch?v=newvid123")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=newvid123")
         assert result is not None
         assert "error" in result
 
 
-def test_shared_returns_error_on_summarize_failure():
-    """Summarize returning None → error dict."""
+def test_shared_returns_error_on_summarize_failure(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
@@ -77,13 +71,12 @@ def test_shared_returns_error_on_summarize_failure():
         patch("src.pipeline.get_transcript", return_value="some transcript text"),
         patch("src.pipeline.summarize_content", return_value=None),
     ):
-        result = process_youtube_video("https://www.youtube.com/watch?v=newvid456")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=newvid456")
         assert result is not None
         assert "error" in result
 
 
-def test_process_youtube_accepts_upload_date():
-    """process_youtube_video passes upload_date through to stage_pending."""
+def test_process_youtube_accepts_upload_date(chat_id):
     from src.pipeline import process_youtube_video
 
     summary = {
@@ -104,12 +97,12 @@ def test_process_youtube_accepts_upload_date():
     ):
         mock_save.return_value = "abc12345"
         result = process_youtube_video(
+            chat_id,
             "https://www.youtube.com/watch?v=datetest",
             upload_date="2025-01-15",
         )
         assert result is not None
         assert "error" not in result
-        # Verify date_str was passed correctly
         _, kwargs = mock_save.call_args
         assert kwargs.get("date_str") == "2025-01-15"
 
@@ -139,7 +132,7 @@ def _article_dict():
     }
 
 
-def test_process_web_article_happy_path():
+def test_process_web_article_happy_path(chat_id):
     from src.pipeline import process_web_article
 
     with (
@@ -149,7 +142,7 @@ def test_process_web_article_happy_path():
         patch("src.pipeline.stage_pending") as mock_save,
     ):
         mock_save.return_value = "abc12345"
-        result = process_web_article("https://example.com/foo")
+        result = process_web_article(chat_id, "https://example.com/foo")
 
     assert result is not None
     assert "error" not in result
@@ -160,41 +153,41 @@ def test_process_web_article_happy_path():
     assert result["category"] == "ai-news"
 
 
-def test_process_web_article_already_processed():
+def test_process_web_article_already_processed(chat_id):
     from src.pipeline import process_web_article
     from src.storage import mark_processed, make_content_id
 
-    mark_processed(make_content_id("web_article", "https://example.com/dup"))
+    mark_processed(chat_id, make_content_id("web_article", "https://example.com/dup"))
 
     with patch("src.pipeline.extract_web_article") as mock_extract:
-        result = process_web_article("https://example.com/dup")
+        result = process_web_article(chat_id, "https://example.com/dup")
         assert "error" in result
         mock_extract.assert_not_called()
 
 
-def test_process_web_article_extract_failure():
+def test_process_web_article_extract_failure(chat_id):
     from src.pipeline import process_web_article
 
     with patch("src.pipeline.extract_web_article", return_value=None):
-        result = process_web_article("https://example.com/bad")
+        result = process_web_article(chat_id, "https://example.com/bad")
 
     assert result is not None
     assert "error" in result
 
 
-def test_process_web_article_summarize_failure():
+def test_process_web_article_summarize_failure(chat_id):
     from src.pipeline import process_web_article
 
     with (
         patch("src.pipeline.extract_web_article", return_value=_article_dict()),
         patch("src.pipeline.summarize_content", return_value=None),
     ):
-        result = process_web_article("https://example.com/foo")
+        result = process_web_article(chat_id, "https://example.com/foo")
 
     assert "error" in result
 
 
-def test_process_web_article_propagates_author_and_sitename():
+def test_process_web_article_propagates_author_and_sitename(chat_id):
     from src.pipeline import process_web_article
 
     with (
@@ -204,23 +197,22 @@ def test_process_web_article_propagates_author_and_sitename():
         patch("src.pipeline.stage_pending") as mock_save,
     ):
         mock_save.return_value = "abc12345"
-        process_web_article("https://example.com/foo")
+        process_web_article(chat_id, "https://example.com/foo")
 
     _, kwargs = mock_save.call_args
     assert kwargs["author"] == "Jane Doe"
     assert kwargs["sitename"] == "example.com"
 
 
-def test_process_content_unknown_source_type():
+def test_process_content_unknown_source_type(chat_id):
     from src.pipeline import _process_content
 
-    result = _process_content("https://x", "podcast")
+    result = _process_content(chat_id, "https://x", "podcast")
     assert "error" in result
     assert "podcast" in result["error"]
 
 
-def test_pipeline_always_calls_categorize_when_no_user_category():
-    """Without a user-supplied category, categorize_content is the only path."""
+def test_pipeline_always_calls_categorize_when_no_user_category(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
@@ -230,14 +222,13 @@ def test_pipeline_always_calls_categorize_when_no_user_category():
         patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("computed-cat", False)) as mock_cat,
     ):
-        result = process_youtube_video("https://www.youtube.com/watch?v=catfb01")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=catfb01")
 
     mock_cat.assert_called_once()
     assert result["category"] == "computed-cat"
 
 
-def test_pipeline_skips_categorize_when_user_specified_category():
-    """A user-supplied category bypasses the LLM categorizer entirely."""
+def test_pipeline_skips_categorize_when_user_specified_category(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
@@ -248,6 +239,7 @@ def test_pipeline_skips_categorize_when_user_specified_category():
         patch("src.pipeline.categorize_content") as mock_cat,
     ):
         result = process_youtube_video(
+            chat_id,
             "https://www.youtube.com/watch?v=usercat1",
             category="wordpress",
         )
@@ -257,7 +249,7 @@ def test_pipeline_skips_categorize_when_user_specified_category():
     assert result.get("is_new_category") is not True
 
 
-def test_pipeline_returns_is_new_category_flag():
+def test_pipeline_returns_is_new_category_flag(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
@@ -267,12 +259,12 @@ def test_pipeline_returns_is_new_category_flag():
         patch("src.pipeline.stage_pending", return_value="abc12345"),
         patch("src.pipeline.categorize_content", return_value=("new-cat", True)),
     ):
-        result = process_youtube_video("https://www.youtube.com/watch?v=newcat01")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=newcat01")
 
     assert result.get("is_new_category") is True
 
 
-def test_pipeline_marks_processed_pending_after_stage():
+def test_pipeline_marks_processed_pending_after_stage(chat_id):
     """After staging, content_id is marked processed with status='pending'."""
     import src.storage
     from src.pipeline import process_youtube_video
@@ -284,15 +276,14 @@ def test_pipeline_marks_processed_pending_after_stage():
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="abc12345"),
     ):
-        process_youtube_video("https://www.youtube.com/watch?v=marked01")
+        process_youtube_video(chat_id, "https://www.youtube.com/watch?v=marked01")
 
     cid = make_content_id("youtube_video", "marked01")
-    assert is_processed(cid)
-    assert src.storage._processed_cache[cid]["status"] == "pending"
+    assert is_processed(chat_id, cid)
+    assert src.storage._processed_caches[chat_id][cid]["status"] == "pending"
 
 
-def test_pipeline_result_has_pending_id_not_file_path():
-    """Pipeline returns pending_id and no longer returns file_path."""
+def test_pipeline_result_has_pending_id_not_file_path(chat_id):
     from src.pipeline import process_youtube_video
 
     with (
@@ -301,14 +292,13 @@ def test_pipeline_result_has_pending_id_not_file_path():
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="deadbeef"),
     ):
-        result = process_youtube_video("https://www.youtube.com/watch?v=pendid01")
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=pendid01")
 
     assert result["pending_id"] == "deadbeef"
     assert "file_path" not in result
 
 
-def test_pipeline_passes_raw_transcript_to_stage_pending():
-    """The full transcript must be forwarded as raw_text — not thrown away."""
+def test_pipeline_passes_raw_transcript_to_stage_pending(chat_id):
     from src.pipeline import process_youtube_video
 
     transcript = "Full transcript body that must reach the pending registry."
@@ -318,13 +308,12 @@ def test_pipeline_passes_raw_transcript_to_stage_pending():
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="deadbeef") as mock_stage,
     ):
-        process_youtube_video("https://www.youtube.com/watch?v=rawtxt01")
+        process_youtube_video(chat_id, "https://www.youtube.com/watch?v=rawtxt01")
 
     assert mock_stage.call_args.kwargs["raw_text"] == transcript
 
 
-def test_pipeline_passes_article_text_to_stage_pending():
-    """Web article text is forwarded as raw_text too."""
+def test_pipeline_passes_article_text_to_stage_pending(chat_id):
     from src.pipeline import process_web_article
 
     article = {**_article_dict(), "text": "The full body of the article."}
@@ -333,14 +322,14 @@ def test_pipeline_passes_article_text_to_stage_pending():
         patch("src.pipeline.summarize_content", return_value=_summary_dict()),
         patch("src.pipeline.stage_pending", return_value="cafef00d") as mock_stage,
     ):
-        process_web_article("https://example.com/foo")
+        process_web_article(chat_id, "https://example.com/foo")
 
     assert mock_stage.call_args.kwargs["raw_text"] == "The full body of the article."
 
 
-def test_pipeline_invalid_video_url_returns_error():
+def test_pipeline_invalid_video_url_returns_error(chat_id):
     """URL with no extractable video ID → error dict."""
     from src.pipeline import process_youtube_video
 
-    result = process_youtube_video("https://www.youtube.com/watch")
+    result = process_youtube_video(chat_id, "https://www.youtube.com/watch")
     assert "error" in result

@@ -16,10 +16,9 @@ def test_validate_config_passes_when_set():
 
     with (
         patch("src.main.TELEGRAM_BOT_TOKEN", "tok"),
-        patch("src.main.TELEGRAM_CHAT_ID", 12345),
+        patch("src.main.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.main.OPENROUTER_API_KEY", "key"),
     ):
-        # Should not raise
         _validate_config()
 
 
@@ -28,22 +27,22 @@ def test_validate_config_raises_on_missing_token():
 
     with (
         patch("src.main.TELEGRAM_BOT_TOKEN", ""),
-        patch("src.main.TELEGRAM_CHAT_ID", 12345),
+        patch("src.main.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.main.OPENROUTER_API_KEY", "key"),
     ):
         with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN"):
             _validate_config()
 
 
-def test_validate_config_raises_on_missing_chat_id():
+def test_validate_config_raises_on_empty_chat_ids():
     from src.main import _validate_config
 
     with (
         patch("src.main.TELEGRAM_BOT_TOKEN", "tok"),
-        patch("src.main.TELEGRAM_CHAT_ID", 0),
+        patch("src.main.TELEGRAM_CHAT_IDS", []),
         patch("src.main.OPENROUTER_API_KEY", "key"),
     ):
-        with pytest.raises(RuntimeError, match="TELEGRAM_CHAT_ID"):
+        with pytest.raises(RuntimeError, match="TELEGRAM_CHAT_IDS"):
             _validate_config()
 
 
@@ -52,7 +51,7 @@ def test_validate_config_raises_on_missing_openrouter_key():
 
     with (
         patch("src.main.TELEGRAM_BOT_TOKEN", "tok"),
-        patch("src.main.TELEGRAM_CHAT_ID", 12345),
+        patch("src.main.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.main.OPENROUTER_API_KEY", ""),
     ):
         with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
@@ -64,7 +63,7 @@ def test_validate_config_lists_all_missing():
 
     with (
         patch("src.main.TELEGRAM_BOT_TOKEN", ""),
-        patch("src.main.TELEGRAM_CHAT_ID", 0),
+        patch("src.main.TELEGRAM_CHAT_IDS", []),
         patch("src.main.OPENROUTER_API_KEY", ""),
     ):
         with pytest.raises(RuntimeError) as exc:
@@ -72,7 +71,7 @@ def test_validate_config_lists_all_missing():
 
     msg = str(exc.value)
     assert "TELEGRAM_BOT_TOKEN" in msg
-    assert "TELEGRAM_CHAT_ID" in msg
+    assert "TELEGRAM_CHAT_IDS" in msg
     assert "OPENROUTER_API_KEY" in msg
 
 
@@ -109,7 +108,6 @@ def test_ensure_directories_idempotent(tmp_path: Path):
         patch("src.main.KNOWLEDGE_DIR", knowledge),
         patch("src.main.DATA_DIR", data),
     ):
-        # Already-existing dirs should not raise
         _ensure_directories()
         _ensure_directories()
 

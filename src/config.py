@@ -105,18 +105,6 @@ PROXY_CREDENTIALS_FILE = BASE_DIR / "proxy-credentials"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "openai/gpt-5.4-nano"
 
-# ── Default categories ──────────────────────────────────────────────────────
-_DEFAULT_CATEGORIES: dict[str, str] = {
-    "ai-agents": "AI Agents & Multi-Agent",
-    "claude-code": "Claude Code & AI Dev",
-    "wordpress": "WordPress & WooCommerce",
-    "devops": "DevOps & Infrastructure",
-    "n8n-automation": "N8N & Automation",
-    "ai-news": "AI News & Releases",
-    "business": "Business & Freelancing",
-}
-
-
 # ── Per-user path helpers ───────────────────────────────────────────────────
 def user_dir(chat_id: int) -> Path:
     return USERS_DIR / str(chat_id)
@@ -171,15 +159,17 @@ def _categories_lock_for(chat_id: int) -> threading.Lock:
 
 
 def load_categories(chat_id: int) -> dict[str, str]:
-    """Return defaults merged with per-user additions from categories.yml."""
+    """Return categories for ``chat_id`` from their categories.yml.
+
+    Fully per-user — no shared defaults. Returns an empty dict if the user
+    has no file yet (brand-new user who hasn't finished onboarding).
+    """
     path = user_categories_file(chat_id)
     with _categories_lock_for(chat_id):
-        cats = dict(_DEFAULT_CATEGORIES)
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                custom = yaml.safe_load(f) or {}
-            cats.update(custom)
-        return cats
+        if not path.exists():
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
 
 
 def add_category(chat_id: int, slug: str, description: str) -> None:

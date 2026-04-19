@@ -147,6 +147,32 @@ Scheduler has an additional auto-reject path: entries below `min_relevance` neve
 
 ---
 
+## ADR-006: Categories are per-user, no shared defaults (2026-04-19)
+
+**Status:** Accepted
+
+**Context:** `load_categories(chat_id)` used to merge a hardcoded `_DEFAULT_CATEGORIES` dict (7 slugs, incl. `ai-news`) over the user's own `categories.yml`. A friend who finished onboarding then saw categories they never picked in `/categories` and pending entries. This broke [Architecture rule 3](../CLAUDE.md#architecture-rules-non-negotiable) ("Per-user isolation is total"): every tenant was inheriting the same 7 slugs. Compounding this, [src/categorize.py](../src/categorize.py) hardcoded `ai-news` as the fallback slug whenever the LLM returned something malformed or the API raised — which surfaced the leaked slug even in users who never picked it.
+
+**Decision:**
+- Delete `_DEFAULT_CATEGORIES` entirely from [src/config.py](../src/config.py).
+- `load_categories(chat_id)` returns exactly the user's `categories.yml` (or `{}` if no file yet). The starter menu lives in [src/onboarding_presets.py](../src/onboarding_presets.py) `PRESET_CATEGORIES` and is only shown during the wizard — what the user toggles is what goes into their file.
+- When the LLM returns an unparseable slug or the first call raises, [src/categorize.py](../src/categorize.py) makes a second, focused LLM call asking for `{"slug": "...", "description": "..."}` derived from the content — still per-user. Only if both calls fail do we fall back to a per-user `uncategorized` slug; on approval it's written to *that* user's file via the existing `is_new_category` flow.
+- No migration of existing `categories.yml` files. Users keep their explicit picks. Anything they implicitly relied on is re-added organically by the LLM on next matching content.
+
+**Consequences:**
+- (+) Two users with zero overlap in their onboarding picks now have zero overlap in their category lists — enforces tenant isolation at the data layer, not just the file layer.
+- (+) No more "mystery" slugs appearing in a user's `/categories`.
+- (+) The fallback for a garbled LLM reply stays content-relevant (a generated slug) instead of forcing everything into one bucket.
+- (−) A brand-new user who hasn't finished onboarding has an empty categories dict. The LLM prompt handles this ("suggest a new short slug") but it means the very first entry for such a user always goes into a freshly-generated or `uncategorized` slug. Acceptable — onboarding runs before any `/add`.
+- (−) Any existing user whose admin-era bot had silently accumulated `ai-news`-tagged entries without them explicitly picking it will see that slug disappear from *new* suggestions. Existing files under `knowledge/{chat_id}/ai-news/` are untouched.
+
+**Alternatives considered:**
+- **Keep defaults as onboarding seeds, drop the merge at runtime** — half-measure; still requires two parallel category sets and doesn't simplify.
+- **Migrate each existing `categories.yml` to bake in the old defaults on first start** — preserves behavior but defeats the point of the fix for long-lived users.
+- **Retry the primary LLM prompt instead of a dedicated fresh-category call** — simpler but less targeted; the second prompt is specifically shaped for slug generation.
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

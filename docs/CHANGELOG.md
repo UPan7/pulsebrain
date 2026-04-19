@@ -14,6 +14,18 @@ Reverse-chronological. Most recent on top. One entry per meaningful change — c
 
 ---
 
+## 2026-04-19 — Per-user category isolation (drop shared defaults)
+
+**What:** Removed `_DEFAULT_CATEGORIES` from [src/config.py](../src/config.py). `load_categories(chat_id)` now returns only the user's own `categories.yml` (empty dict if none). In [src/categorize.py](../src/categorize.py), the LLM-fallback path no longer hardcodes `ai-news` — a second LLM call generates a fresh slug + description from the content; on double-failure it falls back to a per-user `uncategorized` slug that lives only in that user's file.
+
+**Why:** A newly-onboarded friend saw category lists that included `ai-news` and other slugs they never picked — the hardcoded defaults were leaking across tenants, breaking the "every user is isolated" rule.
+
+**Impact:** [src/config.py](../src/config.py), [src/categorize.py](../src/categorize.py), [src/onboarding_presets.py](../src/onboarding_presets.py) docstring, [CLAUDE.md](../CLAUDE.md) state-files table, [tests/test_config.py](../tests/test_config.py), [tests/test_categorize.py](../tests/test_categorize.py), [tests/test_multi_user.py](../tests/test_multi_user.py). No migration of existing users' files — their explicit picks stay untouched.
+
+**Breaking changes:** Any user who was implicitly relying on a hardcoded default (e.g. `ai-news`) being present without having picked it will no longer see it. See [ADR-006](DECISIONS.md#adr-006).
+
+---
+
 ## 2026-04-19 — Initial documentation bootstrap
 
 **What:** Added full documentation skeleton.

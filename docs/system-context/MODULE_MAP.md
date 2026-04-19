@@ -83,14 +83,14 @@ pulse-bot/
 | [`pipeline.py`](../../src/pipeline.py) | Shared `_process_content()` — dedup check → extract (YouTube or web) → summarize → categorize → `stage_pending` → `mark_processed(status="pending")`. Public API: `process_youtube_video`, `process_web_article` |
 | [`scheduler.py`](../../src/scheduler.py) | `fetch_channel_videos(channel_id)` RSS parse; `run_channel_check(chat_id, app)` iterates all enabled channels, processes new videos, auto-rejects < `min_relevance`, sends per-item notification + end-of-run digest (only on non-zero activity); `setup_scheduler(app)` registers one `IntervalTrigger` job that loops all allowed users |
 | [`summarize.py`](../../src/summarize.py) | `summarize_content(chat_id, content, title, source_name, source_type, date)` — builds `LANGUAGE_DIRECTIVES[lang]` + user-context block from profile, calls OpenRouter, parses JSON, retries once on malformed output. `answer_question(chat_id, question, sources)` for `/search` follow-ups |
-| [`categorize.py`](../../src/categorize.py) | `categorize_content(chat_id, title, content)` — LLM picks a slug; `_auto_merge()` pure fuzzy-match against existing categories at 0.75 threshold (catches `ai-agent`→`ai-agents`); falls back to `ai-news` on malformed slug or exception |
+| [`categorize.py`](../../src/categorize.py) | `categorize_content(chat_id, title, content)` — LLM picks a slug; `_auto_merge()` pure fuzzy-match against existing categories at 0.75 threshold (catches `ai-agent`→`ai-agents`); on malformed slug or API error, `_generate_fresh_category()` makes a second LLM call for a content-derived slug + description; safety net is a per-user `uncategorized` slug |
 | [`storage.py`](../../src/storage.py) | `init_processed(chat_id)` / `is_processed` / `mark_processed` / `make_content_id(source_type, identifier)`. `save_entry(...)` writes Markdown + `.source.txt` sibling. `_update_index(chat_id)` regenerates `_index.md`. `move_entry` re-categorizes. `search_knowledge`, `search_for_question`, `get_recent_entries`, `get_entries_in_category`, `get_stats`, `entry_id`, `find_entry_by_id`, `read_entry_markdown`, `get_source_text_path`. TTL entry cache (60 s) per user |
 | [`pending.py`](../../src/pending.py) | `init_pending` / `stage_pending` / `get_pending` / `list_pending` / `update_pending_category` / `commit_pending` (→ `save_entry` → `mark_processed(status="ok")`) / `reject_pending(reason)` (→ `_append_rejected_log` → `mark_processed(status="rejected")`). `read_rejected_log` for `/rejected` command |
 | [`profile.py`](../../src/profile.py) | `init_profile` / `load_profile` (safe — falls through to defaults) / `save_profile` / `profile_exists` / `get_language`. `build_relevance_context(chat_id)` merges profile + top-categories + top-topics + recent-avg + rejected titles for summarize prompt. `format_relevance_context` flattens to a prompt-ready string |
 | [`migration.py`](../../src/migration.py) | `migrate_legacy_to_admin(admin_chat_id)` — idempotent via `data/.migrated_v1` marker. Moves flat legacy files (`data/processed.json`, `channels.yml`, `knowledge/{category}/…`) into `data/users/{admin}/` + `knowledge/{admin}/`. Skips when admin namespace already has content (no silent merge) |
 | [`telegram_bot.py`](../../src/telegram_bot.py) | 17 command handlers registered in `create_bot_application()` at line 1489. User-auth decorator, inline-keyboard callbacks for approve/reject/category-edit, `send_notification(app, chat_id, result)` called from scheduler |
 | [`onboarding.py`](../../src/onboarding.py) | `STEPS = [lang, welcome, persona, learning, stack, notinterested, categories, channels, done]`. `CALLBACK_STEPS` vs text steps. `new_draft()`, `step_key(i)`, `next_step(i)`, `parse_multiline(text)`, `apply_draft(chat_id, draft)` writes profile + categories + channels |
-| [`onboarding_presets.py`](../../src/onboarding_presets.py) | `PRESET_CATEGORIES` dict (10 slugs — superset of `config._DEFAULT_CATEGORIES`), `PRESET_CHANNELS = []` (wizard skips channel step when empty) |
+| [`onboarding_presets.py`](../../src/onboarding_presets.py) | `PRESET_CATEGORIES` dict (10 slugs — the starter menu shown during the onboarding wizard; each user's `categories.yml` holds only what they explicitly toggle), `PRESET_CHANNELS = []` (wizard skips channel step when empty) |
 | [`strings.py`](../../src/strings.py) | `t(key, lang, **kwargs)` single lookup with fallback chain → `en`. `SUPPORTED_LANGS = ["en","de","fr","es","it","pt","zh","ja","ru","ar"]`. Large (2727 LOC) because every template has 10 translations |
 
 ### Primary data sources
@@ -200,7 +200,7 @@ extractors.web ──▶ trafilatura only (no internal deps)
 | [`test_extractors.py`](../../tests/test_extractors.py) | YouTube transcript retries, metadata oEmbed fallback, `resolve_channel_id`, `get_recent_video_ids` |
 | [`test_extractors_web.py`](../../tests/test_extractors_web.py) | Trafilatura happy path, short-article rejection, metadata absence |
 | [`test_summarize.py`](../../tests/test_summarize.py) | LLM JSON retry, language directive selection, relevance-context injection, `answer_question` |
-| [`test_categorize.py`](../../tests/test_categorize.py) | Exact match, `_auto_merge` threshold, new-slug acceptance, malformed-slug fallback to `ai-news` |
+| [`test_categorize.py`](../../tests/test_categorize.py) | Exact match, `_auto_merge` threshold, new-slug acceptance, fresh-category generation on malformed slug, per-user `uncategorized` safety net on double failure |
 | [`test_storage.py`](../../tests/test_storage.py) | Markdown writing, `make_content_id`, dedup cache, `_index.md`, search scoring, `move_entry`, `get_stats` |
 | [`test_pending.py`](../../tests/test_pending.py) | Stage → commit (writes `.md`, `.source.txt`, marks `ok`), stage → reject (log + `rejected` status), `read_rejected_log`, `update_pending_category` |
 | [`test_profile.py`](../../tests/test_profile.py) | `load_profile` default fill, `save_profile` atomicity, `get_language` normalization, `build_relevance_context` aggregation |
@@ -257,7 +257,7 @@ channels:
 ```
 
 ```yaml
-# categories.yml — flat slug → description map, merged over _DEFAULT_CATEGORIES
+# categories.yml — flat slug → description map, per-user only (no shared defaults)
 ai-agents: "AI Agents & Multi-Agent"
 custom-slug: "User-added description"
 ```

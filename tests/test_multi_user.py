@@ -65,22 +65,22 @@ def test_channels_are_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_cha
 
 
 def test_categories_are_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_chat_id):
-    """Custom categories live per-user; defaults are shared (same list)."""
+    """Categories are fully per-user — no shared defaults leak across tenants."""
     from src.config import add_category, ensure_user_dirs, load_categories
 
     ensure_user_dirs(chat_id)
     ensure_user_dirs(other_chat_id)
 
     add_category(chat_id, "my-custom", "My custom category")
+    add_category(other_chat_id, "their-thing", "Their thing")
 
     cats_a = load_categories(chat_id)
     cats_b = load_categories(other_chat_id)
 
-    assert "my-custom" in cats_a
-    assert "my-custom" not in cats_b
-    # Defaults still shared.
-    assert "ai-agents" in cats_a
-    assert "ai-agents" in cats_b
+    assert cats_a == {"my-custom": "My custom category"}
+    assert cats_b == {"their-thing": "Their thing"}
+    # Explicitly: no overlap.
+    assert not (set(cats_a) & set(cats_b))
 
 
 def test_knowledge_is_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_chat_id, sample_entry_kwargs):

@@ -130,7 +130,7 @@ Under `data/users/{chat_id}/`:
 |---|---|---|---|
 | `profile.yaml` | language, persona, skill_level, known_stack[], actively_learning[], already_comfortable_with[], not_interested_in[] | onboarding, `/language` | summarize (relevance context) |
 | `channels.yml` | `{channels: [{name, id, category, enabled, min_relevance?}]}` | `/add`, `/remove`, wizard | scheduler |
-| `categories.yml` | `{slug: description}` (merged over defaults) | `/add`, wizard, auto-add on new-category | categorize, `/categories` |
+| `categories.yml` | `{slug: description}`, per-user only — no shared defaults | onboarding wizard, `/add`, auto-add on LLM-proposed new category | categorize, `/categories` |
 | `processed.json` | `{content_id: {status: pending|ok|rejected, processed_at}}` | pipeline, pending | dedup checks |
 | `pending.json` | `{pending_id: {content_id, title, summary_bullets, …}}` | pipeline (stage), approve/reject | `/pending`, scheduler auto-reject |
 | `rejected_log.jsonl` | one JSON record per reject | pending.reject_pending | `/rejected` |

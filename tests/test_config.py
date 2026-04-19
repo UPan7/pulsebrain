@@ -43,29 +43,27 @@ def test_parse_chat_entries_skips_duplicates_and_invalid():
     assert labels == {12345: "A"}  # first label wins
 
 
-def test_load_categories_includes_defaults(tmp_knowledge_dir, chat_id):
-    """All default categories always present."""
-    from src.config import _DEFAULT_CATEGORIES, ensure_user_dirs, load_categories
+def test_load_categories_empty_when_no_file(tmp_knowledge_dir, chat_id):
+    """Brand-new user with no categories.yml gets an empty dict — no shared defaults."""
+    from src.config import ensure_user_dirs, load_categories
 
     ensure_user_dirs(chat_id)
-    cats = load_categories(chat_id)
-    for slug in _DEFAULT_CATEGORIES:
-        assert slug in cats
+    assert load_categories(chat_id) == {}
 
 
-def test_load_categories_merges_custom(tmp_knowledge_dir, chat_id):
-    """Custom categories.yml entries are merged with defaults."""
+def test_load_categories_returns_only_user_entries(tmp_knowledge_dir, chat_id):
+    """categories.yml is the sole source of truth — no defaults injected."""
     import yaml
     from src.config import ensure_user_dirs, load_categories, user_categories_file
 
     ensure_user_dirs(chat_id)
     user_categories_file(chat_id).write_text(
-        yaml.dump({"custom-cat": "Custom Category"}), encoding="utf-8"
+        yaml.dump({"custom-cat": "Custom Category", "another": "Another"}),
+        encoding="utf-8",
     )
 
     cats = load_categories(chat_id)
-    assert "custom-cat" in cats
-    assert "ai-agents" in cats  # default still present
+    assert cats == {"custom-cat": "Custom Category", "another": "Another"}
 
 
 def test_add_category_persists(tmp_knowledge_dir, chat_id):

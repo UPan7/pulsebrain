@@ -8,6 +8,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _allow_default_chat_id(monkeypatch):
+    """Most tests in this file use chat_id=12345 — allowlist it for every test.
+
+    Tests that specifically test the unauthorized path still use explicit
+    patch/monkeypatch to override this fixture's list.
+    """
+    import src.telegram_bot
+    monkeypatch.setattr(src.telegram_bot, "TELEGRAM_CHAT_IDS", [12345])
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _make_update(chat_id: int = 12345, text: str = "", language_code: str = "en-US"):
@@ -45,7 +56,7 @@ def test_authorized_correct_id():
     from src.telegram_bot import _authorized
 
     update = _make_update(chat_id=12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         assert _authorized(update) is True
 
 
@@ -54,7 +65,7 @@ def test_unauthorized_wrong_id():
     from src.telegram_bot import _authorized
 
     update = _make_update(chat_id=99999)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         assert _authorized(update) is False
 
 
@@ -69,7 +80,7 @@ async def test_cmd_start_replies_when_profile_exists():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.profile_exists", return_value=True),
         patch("src.telegram_bot.get_language", return_value="ru"),
     ):
@@ -88,7 +99,7 @@ async def test_cmd_start_replies_in_english_when_profile_is_en():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.profile_exists", return_value=True),
         patch("src.telegram_bot.get_language", return_value="en"),
     ):
@@ -110,12 +121,13 @@ async def test_cmd_start_first_run_shows_welcome_in_detected_language():
     update = _make_update(chat_id=12345, language_code="de-DE")
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.profile_exists", return_value=False),
     ):
         await cmd_start(update, ctx)
-    text = update.message.reply_text.call_args[0][0]
-    assert "Hallo" in text  # German welcome
+    # Two messages now: the pitch (first) + the language picker (second).
+    texts = [call.args[0] for call in update.message.reply_text.call_args_list]
+    assert any("Hallo" in t for t in texts)  # German pitch
     # Draft should be pre-seeded with the detected language
     assert ctx.user_data["onboarding_draft"]["language"] == "de"
 
@@ -128,12 +140,12 @@ async def test_cmd_start_first_run_falls_back_to_english_for_unknown_locale():
     update = _make_update(chat_id=12345, language_code="sw")  # Swahili: unsupported
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.profile_exists", return_value=False),
     ):
         await cmd_start(update, ctx)
-    text = update.message.reply_text.call_args[0][0]
-    assert "Hi" in text  # English welcome
+    texts = [call.args[0] for call in update.message.reply_text.call_args_list]
+    assert any("Hi" in t for t in texts)  # English pitch
     assert ctx.user_data["onboarding_draft"]["language"] == "en"
 
 
@@ -149,7 +161,7 @@ async def test_handle_message_routes_youtube():
     ctx = _make_context()
 
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot._handle_youtube_video", new_callable=AsyncMock) as mock_yt,
         patch("src.telegram_bot._handle_web_article", new_callable=AsyncMock),
     ):
@@ -166,7 +178,7 @@ async def test_handle_message_routes_web():
     ctx = _make_context()
 
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot._handle_youtube_video", new_callable=AsyncMock),
         patch("src.telegram_bot._handle_web_article", new_callable=AsyncMock) as mock_web,
     ):
@@ -183,7 +195,7 @@ async def test_handle_message_routes_question():
     ctx = _make_context()
 
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot._handle_question", new_callable=AsyncMock) as mock_q,
     ):
         await handle_message(update, ctx)
@@ -309,7 +321,7 @@ async def test_unauthorized_short_circuits_every_command(handler_name):
     handler = getattr(tb, handler_name)
     update = _make_update(chat_id=99999, text="hello")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await handler(update, ctx)
 
     update.message.reply_text.assert_not_called()
@@ -325,7 +337,7 @@ async def test_cmd_help_replies_with_command_list():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_language", return_value="ru"),
     ):
         await cmd_help(update, ctx)
@@ -344,7 +356,7 @@ async def test_cmd_help_in_english():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_language", return_value="en"),
     ):
         await cmd_help(update, ctx)
@@ -363,7 +375,7 @@ async def test_cmd_list_no_channels():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.load_channels", return_value=[]),
     ):
         await cmd_list(update, ctx)
@@ -383,7 +395,7 @@ async def test_cmd_list_with_channels():
         {"name": "Disabled", "id": "UC2", "category": "wp", "enabled": False},
     ]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.load_channels", return_value=channels),
     ):
         await cmd_list(update, ctx)
@@ -400,7 +412,7 @@ async def test_cmd_add_no_args():
 
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_add(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -414,7 +426,7 @@ async def test_cmd_add_unresolvable_url():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["https://youtube.com/@nope"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.resolve_channel_id", return_value=(None, None)),
     ):
         await cmd_add(update, ctx)
@@ -431,7 +443,7 @@ async def test_cmd_add_already_monitored():
     ctx = _make_context(args=["https://youtube.com/@known", "ai-news"])
     existing = [{"name": "Known", "id": "UC_known", "category": "ai-news", "enabled": True}]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.resolve_channel_id", return_value=("UC_known", "Known")),
         patch("src.telegram_bot.load_channels", return_value=existing),
         patch("src.telegram_bot.save_channels") as mock_save,
@@ -450,7 +462,7 @@ async def test_cmd_add_with_category_persists_immediately():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["https://youtube.com/@new", "ai-news"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.resolve_channel_id", return_value=("UC_new", "NewChan")),
         patch("src.telegram_bot.load_channels", return_value=[]),
         patch("src.telegram_bot.save_channels") as mock_save,
@@ -458,7 +470,7 @@ async def test_cmd_add_with_category_persists_immediately():
         await cmd_add(update, ctx)
 
     mock_save.assert_called_once()
-    saved = mock_save.call_args[0][0]
+    saved = mock_save.call_args[0][1]
     assert any(ch["id"] == "UC_new" and ch["category"] == "ai-news" for ch in saved)
 
 
@@ -469,7 +481,7 @@ async def test_cmd_add_without_category_offers_keyboard():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["https://youtube.com/@new"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.resolve_channel_id", return_value=("UC_new", "NewChan")),
         patch("src.telegram_bot.load_channels", return_value=[]),
         patch("src.telegram_bot.load_categories", return_value={"ai-news": "AI News"}),
@@ -490,7 +502,7 @@ async def test_cmd_remove_no_args():
 
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_remove(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -505,7 +517,7 @@ async def test_cmd_remove_substring_match():
     ctx = _make_context(args=["fire"])
     channels = [{"name": "Fireship", "id": "UC1", "category": "ai-news", "enabled": True}]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.load_channels", return_value=channels),
         patch("src.telegram_bot.save_channels") as mock_save,
     ):
@@ -522,7 +534,7 @@ async def test_cmd_remove_not_found():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["nope"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.load_channels", return_value=[]),
         patch("src.telegram_bot.save_channels") as mock_save,
     ):
@@ -540,7 +552,7 @@ async def test_cmd_categories_empty():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_stats", return_value={
             "by_category": {}, "category_health": {},
         }),
@@ -567,7 +579,7 @@ async def test_cmd_categories_with_entries():
         },
     }
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_stats", return_value=stats),
     ):
         await cmd_categories(update, ctx)
@@ -596,7 +608,7 @@ async def test_cmd_categories_marks_stale():
         },
     }
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_stats", return_value=stats),
     ):
         await cmd_categories(update, ctx)
@@ -612,7 +624,7 @@ async def test_cmd_search_no_args():
 
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_search(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -626,7 +638,7 @@ async def test_cmd_search_no_results():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["unicorn"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.search_knowledge", return_value=[]),
     ):
         await cmd_search(update, ctx)
@@ -646,7 +658,7 @@ async def test_cmd_search_with_results():
          "category": "ai-news", "relevance": "8", "summary_preview": "• preview line"},
     ]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.search_knowledge", return_value=results),
     ):
         await cmd_search(update, ctx)
@@ -663,12 +675,12 @@ async def test_cmd_recent_default_count():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_recent_entries", return_value=[]) as mock_get,
     ):
         await cmd_recent(update, ctx)
 
-    mock_get.assert_called_once_with(5)
+    mock_get.assert_called_once_with(12345, 5)
 
 
 @pytest.mark.asyncio
@@ -680,12 +692,12 @@ async def test_cmd_recent_custom_count():
     entry = {"title": "T", "type": "web_article", "source": "S", "date": "2025-06-01",
              "category": "ai-news"}
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_recent_entries", return_value=[entry]) as mock_get,
     ):
         await cmd_recent(update, ctx)
 
-    mock_get.assert_called_once_with(10)
+    mock_get.assert_called_once_with(12345, 10)
     text = update.message.reply_text.call_args[0][0]
     assert "T" in text
 
@@ -697,7 +709,7 @@ async def test_cmd_recent_empty():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_recent_entries", return_value=[]),
     ):
         await cmd_recent(update, ctx)
@@ -715,7 +727,7 @@ async def test_cmd_status_summary():
     stats = {"total": 10, "videos": 6, "articles": 4, "avg_relevance": 7.5, "this_week": 2}
     channels = [{"enabled": True}, {"enabled": False}]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_stats", return_value=stats),
         patch("src.telegram_bot.load_channels", return_value=channels),
     ):
@@ -741,7 +753,7 @@ async def test_cmd_stats_summary():
         "top_sources": [("Ch", 3)],
     }
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_stats", return_value=stats),
     ):
         await cmd_stats(update, ctx)
@@ -758,7 +770,7 @@ async def test_cmd_run_processes_videos():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.scheduler.run_channel_check", new_callable=AsyncMock, return_value=3),
     ):
         await cmd_run(update, ctx)
@@ -774,7 +786,7 @@ async def test_cmd_run_no_new_videos():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.scheduler.run_channel_check", new_callable=AsyncMock, return_value=0),
     ):
         await cmd_run(update, ctx)
@@ -790,7 +802,7 @@ async def test_cmd_pending_empty():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.list_pending", return_value=[]),
     ):
         await cmd_pending(update, ctx)
@@ -807,7 +819,7 @@ async def test_cmd_pending_lists_entries():
     ctx = _make_context()
     entries = [_fake_pending_entry(), {**_fake_pending_entry(), "id": "cafef00d", "title": "Second"}]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.list_pending", return_value=entries),
     ):
         await cmd_pending(update, ctx)
@@ -843,7 +855,7 @@ async def test_cmd_rejected_empty_log():
     update = _make_update(chat_id=12345)
     ctx = _make_context()
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=[]),
     ):
         await cmd_rejected(update, ctx)
@@ -863,12 +875,12 @@ async def test_cmd_rejected_shows_records_with_score_and_reason():
         _fake_rejected_record("Generic listicle", 3, "low_relevance"),
     ]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=records) as mock_read,
     ):
         await cmd_rejected(update, ctx)
 
-    mock_read.assert_called_once_with(10)  # default
+    mock_read.assert_called_once_with(12345, 10)  # default
     text = update.message.reply_text.call_args[0][0]
     assert "Docker 101" in text
     assert "Generic listicle" in text
@@ -885,12 +897,12 @@ async def test_cmd_rejected_honors_numeric_arg():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["3"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
     ):
         await cmd_rejected(update, ctx)
 
-    mock_read.assert_called_once_with(3)
+    mock_read.assert_called_once_with(12345, 3)
 
 
 @pytest.mark.asyncio
@@ -901,12 +913,12 @@ async def test_cmd_rejected_caps_limit_at_50():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["999"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
     ):
         await cmd_rejected(update, ctx)
 
-    mock_read.assert_called_once_with(50)
+    mock_read.assert_called_once_with(12345, 50)
 
 
 @pytest.mark.asyncio
@@ -917,12 +929,12 @@ async def test_cmd_rejected_handles_non_numeric_arg():
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["foo"])
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=[]) as mock_read,
     ):
         await cmd_rejected(update, ctx)
 
-    mock_read.assert_called_once_with(10)
+    mock_read.assert_called_once_with(12345, 10)
 
 
 @pytest.mark.asyncio
@@ -933,7 +945,7 @@ async def test_cmd_rejected_maps_manual_reason():
     ctx = _make_context()
     records = [_fake_rejected_record("User rejected this", 7, "manual")]
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.read_rejected_log", return_value=records),
     ):
         await cmd_rejected(update, ctx)
@@ -1138,7 +1150,7 @@ async def test_handle_new_category_input_persists_and_adds_channel():
     ):
         await _handle_new_category_input(update, ctx, "machine-learning ML Stuff", "add_channel")
 
-    mock_add.assert_called_once_with("machine-learning", "ML Stuff")
+    mock_add.assert_called_once_with(12345, "machine-learning", "ML Stuff")
     mock_save.assert_called_once()
     assert "pending_channel" not in ctx.user_data
 
@@ -1157,8 +1169,8 @@ async def test_handle_new_category_input_pending_branch():
     ):
         await _handle_new_category_input(update, ctx, "robotics", "pending:deadbeef")
 
-    mock_add.assert_called_once_with("robotics", "Robotics")
-    mock_upd.assert_called_once_with("deadbeef", "robotics", is_new_category=True)
+    mock_add.assert_called_once_with(12345, "robotics", "Robotics")
+    mock_upd.assert_called_once_with(12345, "deadbeef", "robotics", is_new_category=True)
     # The reply has the new keyboard attached
     last_kwargs = update.message.reply_text.call_args_list[-1][1]
     assert "reply_markup" in last_kwargs
@@ -1292,7 +1304,7 @@ async def test_callback_pskip_rejects_entry():
     ):
         await callback_handler(update, ctx)
 
-    mock_rej.assert_called_once_with("deadbeef")
+    mock_rej.assert_called_once_with(12345, "deadbeef")
     text = update.callback_query.edit_message_text.call_args[0][0]
     assert "Rejected" in text
 
@@ -1350,7 +1362,7 @@ async def test_callback_psetc_updates_category():
     ):
         await callback_handler(update, ctx)
 
-    mock_upd.assert_called_once_with("deadbeef", "robotics")
+    mock_upd.assert_called_once_with(12345, "deadbeef", "robotics")
     update.callback_query.edit_message_text.assert_called_once()
 
 
@@ -1469,10 +1481,10 @@ async def test_send_notification_youtube_format():
     entry["topics"] = ["ai"]
     entry["relevance"] = 8
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_pending", return_value=entry),
     ):
-        await send_notification(app, result)
+        await send_notification(app, 12345, result)
 
     text = app.bot.send_message.call_args.kwargs["text"]
     assert "Ch" in text
@@ -1497,10 +1509,10 @@ async def test_send_notification_web_format():
     entry["topics"] = ["web"]
     entry["relevance"] = 7
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.get_pending", return_value=entry),
     ):
-        await send_notification(app, result)
+        await send_notification(app, 12345, result)
 
     text = app.bot.send_message.call_args.kwargs["text"]
     assert "Web Title" in text
@@ -1513,7 +1525,7 @@ async def test_send_notification_silent_when_no_pending_id():
 
     app = MagicMock()
     app.bot.send_message = AsyncMock()
-    await send_notification(app, {"title": "no pid"})
+    await send_notification(app, 12345, {"title": "no pid"})
 
     app.bot.send_message.assert_not_called()
 
@@ -1525,7 +1537,7 @@ async def test_send_notification_silent_when_entry_dropped():
     app = MagicMock()
     app.bot.send_message = AsyncMock()
     with patch("src.telegram_bot.get_pending", return_value=None):
-        await send_notification(app, {"pending_id": "deadbeef"})
+        await send_notification(app, 12345, {"pending_id": "deadbeef"})
 
     app.bot.send_message.assert_not_called()
 
@@ -1536,8 +1548,8 @@ async def test_send_error_notification():
 
     app = MagicMock()
     app.bot.send_message = AsyncMock()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
-        await send_error_notification(app, "T", "boom")
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
+        await send_error_notification(app, 12345, "T", "boom")
 
     text = app.bot.send_message.call_args.kwargs["text"]
     assert "T" in text
@@ -1587,23 +1599,24 @@ async def test_cmd_start_fresh_triggers_wizard(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import cmd_start
 
-    init_profile()
+    init_profile(12345)
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_start(update, ctx)
 
     # State initialized
     assert ctx.user_data["onboarding_step"] == 0
     assert "onboarding_draft" in ctx.user_data
-    # Single-language welcome (Phase 7.4 — defaults to English because
-    # the _make_update helper's default language_code is "en-US") + 10-lang keyboard
-    call = update.message.reply_text.call_args
-    text = call[0][0]
-    assert "Hi" in text
-    assert "reply_markup" in call.kwargs
+    # Two messages: pitch (first, no keyboard) + language picker (second).
+    calls = update.message.reply_text.call_args_list
+    assert len(calls) == 2
+    pitch_text = calls[0].args[0]
+    assert "Hi" in pitch_text
+    picker_call = calls[1]
+    assert "reply_markup" in picker_call.kwargs
+    keyboard = picker_call.kwargs["reply_markup"]
     # 10-lang picker has 5 rows × 2 buttons
-    keyboard = call.kwargs["reply_markup"]
     assert len(keyboard.inline_keyboard) == 5
 
 
@@ -1613,12 +1626,12 @@ async def test_cmd_start_returning_skips_wizard(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import cmd_start
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_start(update, ctx)
 
     assert "onboarding_step" not in ctx.user_data
@@ -1632,15 +1645,15 @@ async def test_wizard_lang_callback_advances_to_welcome(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler, cmd_start
 
-    init_profile()
+    init_profile(12345)
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_start(update, ctx)
 
     # Now click the English button
     cb = _make_callback_update(12345, "onb:lang:en")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     assert ctx.user_data["onboarding_draft"]["language"] == "en"
@@ -1656,9 +1669,9 @@ async def test_wizard_persona_text_step(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler, cmd_start, handle_message
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         # /start → step 0
         await cmd_start(_make_update(12345), ctx)
         # onb:lang:ru → step 1
@@ -1670,7 +1683,7 @@ async def test_wizard_persona_text_step(tmp_knowledge_dir):
 
     # User types their persona
     update = _make_update(12345, text="Senior dev, 10 years")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await handle_message(update, ctx)
 
     assert ctx.user_data["onboarding_draft"]["persona"] == "Senior dev, 10 years"
@@ -1683,9 +1696,9 @@ async def test_wizard_multiline_text_parsed(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler, cmd_start, handle_message
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_start(_make_update(12345), ctx)
         await callback_handler(_make_callback_update(12345, "onb:lang:ru"), ctx)
         await callback_handler(_make_callback_update(12345, "onb:next"), ctx)
@@ -1710,14 +1723,14 @@ async def test_wizard_category_toggle_persists_in_draft(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     ctx.user_data["onboarding_step"] = 6  # categories step
     ctx.user_data["onboarding_draft"] = new_draft()
 
     cb1 = _make_callback_update(12345, "onb:cat:ai-agents")
     cb2 = _make_callback_update(12345, "onb:cat:devops-selfhost")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb1, ctx)
         await callback_handler(cb2, ctx)
 
@@ -1733,13 +1746,13 @@ async def test_wizard_category_toggle_twice_removes(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     ctx.user_data["onboarding_step"] = 6
     ctx.user_data["onboarding_draft"] = new_draft()
 
     cb = _make_callback_update(12345, "onb:cat:ai-agents")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
         await callback_handler(cb, ctx)
 
@@ -1754,7 +1767,7 @@ async def test_wizard_done_applies_draft_and_clears_state(tmp_knowledge_dir):
     from src.profile import init_profile, profile_exists
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     draft = new_draft()
     draft["language"] = "en"
@@ -1765,7 +1778,7 @@ async def test_wizard_done_applies_draft_and_clears_state(tmp_knowledge_dir):
 
     cb = _make_callback_update(12345, "onb:done")
     with (
-        patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345),
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.PRESET_CHANNELS", []),  # skip channels step
     ):
         await callback_handler(cb, ctx)
@@ -1774,8 +1787,8 @@ async def test_wizard_done_applies_draft_and_clears_state(tmp_knowledge_dir):
     assert "onboarding_step" not in ctx.user_data
     assert "onboarding_draft" not in ctx.user_data
     # Profile + categories committed
-    assert profile_exists()
-    assert src.config.CATEGORIES_FILE.exists()
+    assert profile_exists(12345)
+    assert src.config.user_categories_file(12345).exists()
 
 
 @pytest.mark.asyncio
@@ -1785,13 +1798,13 @@ async def test_wizard_skip_button_on_optional_step(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     ctx.user_data["onboarding_step"] = 5  # notinterested
     ctx.user_data["onboarding_draft"] = new_draft()
 
     cb = _make_callback_update(12345, "onb:skip")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     assert ctx.user_data["onboarding_step"] == 6
@@ -1803,12 +1816,12 @@ async def test_wizard_stale_callback_noop(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     # No onboarding_step set
 
     cb = _make_callback_update(12345, "onb:lang:ru")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     # No crash, reply_markup clear called
@@ -1823,7 +1836,7 @@ async def test_cmd_cancel_wipes_flow_state(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import cmd_cancel
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context(user_data={
         "pending_channel": {"id": "UC_x"},
         "waiting_new_category": "add_channel",
@@ -1831,7 +1844,7 @@ async def test_cmd_cancel_wipes_flow_state(tmp_knowledge_dir):
         "onboarding_draft": {"persona": "x"},
     })
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_cancel(update, ctx)
 
     assert "pending_channel" not in ctx.user_data
@@ -1848,10 +1861,10 @@ async def test_cmd_cancel_without_state(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import cmd_cancel
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_cancel(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -1867,10 +1880,10 @@ async def test_cmd_onboarding_fresh_starts_wizard(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import cmd_onboarding
 
-    init_profile()
+    init_profile(12345)
     ctx = _make_context()
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_onboarding(update, ctx)
 
     assert ctx.user_data["onboarding_step"] == 0
@@ -1882,11 +1895,11 @@ async def test_cmd_onboarding_existing_profile_asks_confirm(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import cmd_onboarding
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_onboarding(update, ctx)
 
     # No wizard state set yet
@@ -1900,12 +1913,12 @@ async def test_onboarding_rerun_no_keeps_profile(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
 
     cb = _make_callback_update(12345, "onb:rerun:no")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     text = cb.callback_query.edit_message_text.call_args[0][0]
@@ -1918,12 +1931,12 @@ async def test_onboarding_rerun_yes_starts_wizard(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "en", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "en", "persona": "X"})
     ctx = _make_context()
 
     cb = _make_callback_update(12345, "onb:rerun:yes")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     assert ctx.user_data["onboarding_step"] == 0
@@ -1937,11 +1950,11 @@ async def test_cmd_language_shows_picker_keyboard(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import cmd_language
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_language(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -1956,11 +1969,11 @@ async def test_cmd_language_in_english(tmp_knowledge_dir):
     from src.profile import init_profile, save_profile
     from src.telegram_bot import cmd_language
 
-    init_profile()
-    save_profile({"language": "en", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "en", "persona": "X"})
     ctx = _make_context()
     update = _make_update(12345)
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_language(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -1973,15 +1986,15 @@ async def test_language_callback_writes_profile(tmp_knowledge_dir):
     from src.profile import init_profile, load_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
 
     cb = _make_callback_update(12345, "lang:en")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
-    assert load_profile()["language"] == "en"
+    assert load_profile(12345)["language"] == "en"
 
 
 @pytest.mark.asyncio
@@ -1990,12 +2003,12 @@ async def test_language_callback_confirmation_in_new_language(tmp_knowledge_dir)
     from src.profile import init_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
 
     cb = _make_callback_update(12345, "lang:en")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
     text = cb.callback_query.edit_message_text.call_args[0][0]
@@ -2009,15 +2022,15 @@ async def test_language_callback_ignores_unknown_code(tmp_knowledge_dir):
     from src.profile import init_profile, load_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
 
     cb = _make_callback_update(12345, "lang:klingon")
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(cb, ctx)
 
-    assert load_profile()["language"] == "ru"
+    assert load_profile(12345)["language"] == "ru"
 
 
 @pytest.mark.asyncio
@@ -2025,15 +2038,15 @@ async def test_language_roundtrip_ru_to_en_to_ru(tmp_knowledge_dir):
     from src.profile import init_profile, load_profile, save_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    save_profile({"language": "ru", "persona": "X"})
+    init_profile(12345)
+    save_profile(12345, {"language": "ru", "persona": "X"})
     ctx = _make_context()
 
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(_make_callback_update(12345, "lang:en"), ctx)
-        assert load_profile()["language"] == "en"
+        assert load_profile(12345)["language"] == "en"
         await callback_handler(_make_callback_update(12345, "lang:ru"), ctx)
-        assert load_profile()["language"] == "ru"
+        assert load_profile(12345)["language"] == "ru"
 
 
 # ── /get command + entry file downloads (Phase 7.9) ─────────────────────────
@@ -2046,10 +2059,10 @@ async def test_cmd_get_no_args_empty_base_shows_helpful_message(tmp_knowledge_di
     from src.profile import init_profile
     from src.telegram_bot import cmd_get
 
-    init_profile()
+    init_profile(12345)
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -2067,13 +2080,13 @@ async def test_cmd_get_no_args_shows_categories_list(
     from src.storage import _invalidate_entry_cache, save_entry
     from src.telegram_bot import cmd_get
 
-    init_profile()
-    save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -2091,10 +2104,10 @@ async def test_cmd_get_not_found_for_unknown_id(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import cmd_get
 
-    init_profile()
+    init_profile(12345)
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=["deadbeef"])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -2116,18 +2129,18 @@ async def test_cmd_get_returns_body_with_download_buttons(
     )
     from src.telegram_bot import cmd_get
 
-    init_profile()
-    path = save_entry(
+    init_profile(12345)
+    path = save_entry(12345, 
         **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
         update_index=False,
     )
-    _invalidate_entry_cache()
+    _invalidate_entry_cache(12345)
 
-    target = entry_id(path)
+    target = entry_id(12345, path)
 
     update = _make_update(chat_id=12345)
     ctx = _make_context(args=[target])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -2155,13 +2168,13 @@ async def test_cmd_get_keyboard_always_shows_both_buttons(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_get
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
     update = _make_update(chat_id=12345)
-    ctx = _make_context(args=[entry_id(path)])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    ctx = _make_context(args=[entry_id(12345, path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -2188,16 +2201,16 @@ async def test_callback_entfile_md_sends_document(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
-    target_id = entry_id(path)
+    target_id = entry_id(12345, path)
     update = _make_callback_update_with_document(
         data=f"entfile:md:{target_id}"
     )
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_document.assert_called_once()
@@ -2219,19 +2232,19 @@ async def test_callback_entfile_raw_sends_sidecar(
     )
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    path = save_entry(
+    init_profile(12345)
+    path = save_entry(12345, 
         **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
         update_index=False,
     )
-    _invalidate_entry_cache()
+    _invalidate_entry_cache(12345)
 
-    target_id = entry_id(path)
+    target_id = entry_id(12345, path)
     update = _make_callback_update_with_document(
         data=f"entfile:raw:{target_id}"
     )
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_document.assert_called_once()
@@ -2249,16 +2262,16 @@ async def test_callback_entfile_raw_no_sidecar_falls_back_to_text(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
-    target_id = entry_id(path)
+    target_id = entry_id(12345, path)
     update = _make_callback_update_with_document(
         data=f"entfile:raw:{target_id}"
     )
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_document.assert_not_called()
@@ -2273,10 +2286,10 @@ async def test_callback_entfile_unknown_id(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     update = _make_callback_update_with_document(data="entfile:md:cafebabe")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_document.assert_not_called()
@@ -2297,13 +2310,13 @@ async def test_cmd_get_direct_id_still_works(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_get
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
     update = _make_update(chat_id=12345)
-    ctx = _make_context(args=[entry_id(path)])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    ctx = _make_context(args=[entry_id(12345, path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     call = update.message.reply_text.call_args
@@ -2322,13 +2335,13 @@ async def test_callback_getcat_shows_entries_in_category(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
     update = _make_callback_update(data="getcat:ai-agents")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.edit_message_text.assert_called_once()
@@ -2339,7 +2352,7 @@ async def test_callback_getcat_shows_entries_in_category(
     buttons = [btn for row in keyboard.inline_keyboard for btn in row]
     assert len(buttons) == 1
     assert sample_entry_kwargs["title"] in buttons[0].text
-    assert buttons[0].callback_data == f"getent:{entry_id(path)}"
+    assert buttons[0].callback_data == f"getent:{entry_id(12345, path)}"
 
 
 @pytest.mark.asyncio
@@ -2348,10 +2361,10 @@ async def test_callback_getcat_empty_category_message(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     update = _make_callback_update(data="getcat:ghost-category")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.edit_message_text.assert_not_called()
@@ -2369,16 +2382,16 @@ async def test_callback_getent_shows_detail_with_buttons(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import callback_handler
 
-    init_profile()
-    path = save_entry(
+    init_profile(12345)
+    path = save_entry(12345, 
         **{**sample_entry_kwargs, "raw_text": "raw transcript body"},
         update_index=False,
     )
-    _invalidate_entry_cache()
+    _invalidate_entry_cache(12345)
 
-    update = _make_callback_update(data=f"getent:{entry_id(path)}")
+    update = _make_callback_update(data=f"getent:{entry_id(12345, path)}")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_text.assert_called_once()
@@ -2398,10 +2411,10 @@ async def test_callback_getent_unknown_id_error_message(tmp_knowledge_dir):
     from src.profile import init_profile
     from src.telegram_bot import callback_handler
 
-    init_profile()
+    init_profile(12345)
     update = _make_callback_update(data="getent:cafebabe")
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await callback_handler(update, ctx)
 
     update.callback_query.message.reply_text.assert_called_once()
@@ -2464,18 +2477,18 @@ async def test_long_summary_sends_multipart_with_numbering(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_get
 
-    init_profile()
+    init_profile(12345)
     # ~9 KB of detailed notes → forces at least 2 chunks after wrapping
     big_notes = "\n\n".join([f"Paragraph {i} " + ("x" * 200) for i in range(40)])
-    path = save_entry(
+    path = save_entry(12345, 
         **{**sample_entry_kwargs, "detailed_notes": big_notes},
         update_index=False,
     )
-    _invalidate_entry_cache()
+    _invalidate_entry_cache(12345)
 
     update = _make_update(chat_id=12345)
-    ctx = _make_context(args=[entry_id(path)])
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    ctx = _make_context(args=[entry_id(12345, path)])
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_get(update, ctx)
 
     calls = update.message.reply_text.call_args_list
@@ -2498,13 +2511,13 @@ async def test_cmd_recent_shows_title_and_url(
     from src.storage import _invalidate_entry_cache, entry_id, save_entry
     from src.telegram_bot import cmd_recent
 
-    init_profile()
-    path = save_entry(**sample_entry_kwargs, update_index=False)
-    _invalidate_entry_cache()
+    init_profile(12345)
+    path = save_entry(12345, **sample_entry_kwargs, update_index=False)
+    _invalidate_entry_cache(12345)
 
     update = _make_update(chat_id=12345)
     ctx = _make_context()
-    with patch("src.telegram_bot.TELEGRAM_CHAT_ID", 12345):
+    with patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]):
         await cmd_recent(update, ctx)
 
     text = update.message.reply_text.call_args[0][0]
@@ -2512,6 +2525,6 @@ async def test_cmd_recent_shows_title_and_url(
     assert sample_entry_kwargs["title"] in text
     assert sample_entry_kwargs["source_url"] in text
     # Entry ID is NOT displayed to the user
-    assert f"[{entry_id(path)}]" not in text
+    assert f"[{entry_id(12345, path)}]" not in text
     # Discoverability hint for /get is appended
     assert "/get" in text

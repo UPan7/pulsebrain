@@ -76,14 +76,16 @@ def parse_multiline(text: str) -> list[str]:
 # ── Commit ────────────────────────────────────────────────────────────────
 
 
-def apply_draft(draft: dict[str, Any]) -> dict[str, int]:
-    """Persist the draft to profile.yaml, categories.yml, channels.yml.
+def apply_draft(chat_id: int, draft: dict[str, Any]) -> dict[str, int]:
+    """Persist ``chat_id``'s onboarding draft to their per-user files.
+
+    Writes ``data/users/{chat_id}/profile.yaml``,
+    ``data/users/{chat_id}/categories.yml`` (appending any new slugs),
+    and ``data/users/{chat_id}/channels.yml`` (merging selected
+    channels with anything already saved for this user).
 
     Returns a summary dict with counts of what was written, suitable
     for logging and assertions in tests.
-
-    Import-time dependencies on src.profile / src.config are kept local
-    so this module can be imported cheaply in pure-logic tests.
     """
     from src.config import add_category, load_channels, save_channels
     from src.profile import save_profile
@@ -102,17 +104,17 @@ def apply_draft(draft: dict[str, Any]) -> dict[str, int]:
         "actively_learning": list(draft.get("actively_learning", [])),
         "not_interested_in": list(draft.get("not_interested_in", [])),
     }
-    save_profile(profile)
+    save_profile(chat_id, profile)
 
     categories_added = 0
     for slug, desc in draft.get("selected_categories", {}).items():
-        add_category(slug, desc)
+        add_category(chat_id, slug, desc)
         categories_added += 1
 
     channels_added = 0
     selected = draft.get("selected_channels", [])
     if selected:
-        existing = load_channels()
+        existing = load_channels(chat_id)
         existing_ids = {ch.get("id") for ch in existing}
         for ch in selected:
             if ch.get("id") and ch["id"] not in existing_ids:
@@ -120,7 +122,7 @@ def apply_draft(draft: dict[str, Any]) -> dict[str, int]:
                 existing_ids.add(ch["id"])
                 channels_added += 1
         if channels_added:
-            save_channels(existing)
+            save_channels(chat_id, existing)
 
     summary = {
         "profile_saved": 1,

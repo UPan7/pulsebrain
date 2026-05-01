@@ -1,4 +1,4 @@
-"""APScheduler — periodic RSS/channel checks for new videos."""
+"""APScheduler — periodic per-user RSS/channel checks for new videos."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import feedparser
 from src.config import (
     CHECK_INTERVAL_MINUTES,
     MIN_RELEVANCE_THRESHOLD,
-    TELEGRAM_CHAT_ID,
+    TELEGRAM_CHAT_IDS,
     load_channels,
     logger,
 )
@@ -32,7 +32,7 @@ def fetch_channel_videos(channel_id: str) -> list[dict[str, str]]:
     try:
         feed = feedparser.parse(url)
         videos = []
-        for entry in feed.entries[:10]:  # Last 10 entries
+        for entry in feed.entries[:10]:
             video_id = entry.get("yt_videoid", "")
             if not video_id and "watch?v=" in entry.get("link", ""):
                 video_id = entry["link"].split("watch?v=")[1].split("&")[0]
@@ -49,25 +49,21 @@ def fetch_channel_videos(channel_id: str) -> list[dict[str, str]]:
         return []
 
 
-async def run_channel_check(app=None) -> int:
-    """Check all enabled channels for new videos. Returns count of processed videos.
+async def run_channel_check(chat_id: int, app=None) -> int:
+    """Check all enabled channels for ``chat_id``. Returns count processed.
 
     If *app* is provided, a Telegram notification with the approve/reject
-    keyboard is sent for each successfully-staged video so the user can
-    review the auto-fetched content before it lands in the knowledge base.
+    keyboard is sent to ``chat_id`` for each successfully-staged video.
     A round-digest message is sent at the end of a run *only* when at
     least one counter (processed / rejected / failed) is non-zero — the
-    user explicitly does not want "heartbeat" noise on empty runs. The
-    manual `/run` command has its own explicit reply that fires
-    unconditionally, so empty manual runs still acknowledge.
+    user explicitly does not want "heartbeat" noise on empty runs.
     """
-    channels = load_channels()
+    channels = load_channels(chat_id)
     total_processed = 0
     total_rejected = 0
     total_failed = 0
     channels_checked = sum(1 for ch in channels if ch.get("enabled", True))
 
-    # Phase 1: Parallel RSS fetches (I/O-bound, safe to parallelize)
     async def _fetch_one(channel):
         if not channel.get("enabled", True):
             return channel, []
@@ -76,71 +72,68 @@ async def run_channel_check(app=None) -> int:
 
     results = await asyncio.gather(*[_fetch_one(ch) for ch in channels])
 
-    # Phase 2: Sequential video processing (respects rate limits)
     for channel, videos in results:
         category = channel.get("category")
 
         for video in videos:
             content_id = make_content_id("youtube_video", video["video_id"])
-            if is_processed(content_id):
+            if is_processed(chat_id, content_id):
                 continue
 
-            logger.info("Processing new video: %s", video["title"])
+            logger.info("[chat_id=%s] Processing new video: %s", chat_id, video["title"])
 
             result = await asyncio.to_thread(
                 process_youtube_video,
+                chat_id,
                 video["url"],
                 category=category,
                 upload_date=video.get("published"),
             )
             if result and "error" not in result:
-                # Relevance gate: per-channel override > global default.
-                # Below threshold → silent reject, no notification, no
-                # processed-counter bump. The content_id is already
-                # marked pending inside the pipeline; reject_pending
-                # flips it to "rejected" so the scheduler never
-                # re-fetches it. The rejection is logged to
-                # rejected_log.jsonl so the user can inspect it via
-                # /rejected.
                 threshold = channel.get("min_relevance", MIN_RELEVANCE_THRESHOLD)
                 relevance = result.get("relevance", 5)
                 if relevance < threshold:
                     logger.info(
-                        "Auto-rejected low-relevance video: %s (rel=%d, threshold=%d)",
-                        video["title"], relevance, threshold,
+                        "[chat_id=%s] Auto-rejected low-relevance: %s (rel=%d, threshold=%d)",
+                        chat_id, video["title"], relevance, threshold,
                     )
-                    reject_pending(result["pending_id"], reason="low_relevance")
+                    reject_pending(chat_id, result["pending_id"], reason="low_relevance")
                     total_rejected += 1
                     await asyncio.sleep(3)
                     continue
 
                 total_processed += 1
                 if result.get("is_new_category"):
-                    logger.info("New category suggested: %s for %s", result["category"], video["title"])
+                    logger.info(
+                        "[chat_id=%s] New category suggested: %s for %s",
+                        chat_id, result["category"], video["title"],
+                    )
                 if app is not None:
-                    # Lazy import to avoid a circular import at module load
                     from src.telegram_bot import send_notification
                     try:
-                        await send_notification(app, result)
+                        await send_notification(app, chat_id, result)
                     except Exception as exc:
-                        logger.warning("Failed to send notification for %s: %s",
-                                       video["title"], exc)
+                        logger.warning(
+                            "[chat_id=%s] Failed to send notification for %s: %s",
+                            chat_id, video["title"], exc,
+                        )
             elif result and "error" in result:
                 total_failed += 1
                 logger.warning(
-                    "Failed to process %s: %s", video["title"], result["error"]
+                    "[chat_id=%s] Failed to process %s: %s",
+                    chat_id, video["title"], result["error"],
                 )
 
-            # Rate limiting: 3-second delay between YouTube requests
             await asyncio.sleep(3)
 
     logger.info(
-        "Channel check complete. Processed %d, rejected %d, failed %d across %d channels.",
-        total_processed, total_rejected, total_failed, channels_checked,
+        "[chat_id=%s] Channel check complete. Processed %d, rejected %d, failed %d across %d channels.",
+        chat_id, total_processed, total_rejected, total_failed, channels_checked,
     )
 
     await _send_round_digest(
         app,
+        chat_id,
         channels_checked=channels_checked,
         total_processed=total_processed,
         total_rejected=total_rejected,
@@ -152,17 +145,14 @@ async def run_channel_check(app=None) -> int:
 
 async def _send_round_digest(
     app,
+    chat_id: int,
     *,
     channels_checked: int,
     total_processed: int,
     total_rejected: int,
     total_failed: int,
 ) -> None:
-    """Post-run summary. Sent only when at least one counter is non-zero.
-
-    Zero-activity runs are silent by design — the user explicitly does
-    not want heartbeat noise, and the manual `/run` command has its own
-    explicit reply path for empty-run acknowledgment.
+    """Post-run summary for ``chat_id``. Sent only on non-zero activity.
 
     Failures (Telegram down, mock app in tests) are swallowed so the
     scheduler run is never considered broken by a flaky notification.
@@ -173,7 +163,7 @@ async def _send_round_digest(
         return
     text = t(
         "round_digest_body",
-        get_language(),
+        get_language(chat_id),
         channels=channels_checked,
         processed=total_processed,
         rejected=total_rejected,
@@ -181,13 +171,13 @@ async def _send_round_digest(
         interval=CHECK_INTERVAL_MINUTES,
     )
     try:
-        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+        await app.bot.send_message(chat_id=chat_id, text=text)
     except Exception as exc:
-        logger.warning("Failed to send round digest: %s", exc)
+        logger.warning("[chat_id=%s] Failed to send round digest: %s", chat_id, exc)
 
 
-def setup_scheduler(app) -> None:
-    """Set up APScheduler to run channel checks periodically.
+def setup_scheduler(app):
+    """Set up APScheduler: one periodic job iterating over every allowed user.
 
     Must be called after the Telegram app is initialized.
     """
@@ -196,25 +186,37 @@ def setup_scheduler(app) -> None:
 
     scheduler = AsyncIOScheduler()
 
-    async def scheduled_check():
-        logger.info("Scheduled channel check starting...")
+    async def _run_one(chat_id: int) -> None:
         try:
-            count = await run_channel_check(app=app)
+            count = await run_channel_check(chat_id, app=app)
             if count > 0:
-                logger.info("Scheduled check found %d new videos", count)
+                logger.info("[chat_id=%s] Scheduled check found %d new videos", chat_id, count)
         except Exception as exc:
-            logger.error("Scheduled check failed: %s", exc)
+            # One user's failure must not break the others — isolated per task.
+            logger.error("[chat_id=%s] Scheduled check failed: %s", chat_id, exc)
+
+    async def scheduled_check():
+        logger.info("Scheduled channel check starting for %d users...", len(TELEGRAM_CHAT_IDS))
+        # Run per-user checks concurrently. LLM calls inside are bounded by
+        # OPENROUTER_SEMAPHORE in summarize/categorize, so a burst of users
+        # cannot exceed the global OpenRouter concurrency cap.
+        await asyncio.gather(
+            *(_run_one(cid) for cid in TELEGRAM_CHAT_IDS),
+            return_exceptions=False,
+        )
 
     scheduler.add_job(
         scheduled_check,
         trigger=IntervalTrigger(minutes=CHECK_INTERVAL_MINUTES),
         id="channel_check",
-        name="YouTube Channel Check",
+        name="Per-user YouTube Channel Check",
         replace_existing=True,
     )
 
     logger.info(
-        "Scheduler configured — will check every %d minutes", CHECK_INTERVAL_MINUTES
+        "Scheduler configured — will check every %d minutes across %d users",
+        CHECK_INTERVAL_MINUTES,
+        len(TELEGRAM_CHAT_IDS),
     )
 
     return scheduler

@@ -1,101 +1,181 @@
-"""Tests for src.categorize — slug validation, LLM fallback."""
+"""Tests for src.categorize — per-user slug validation, LLM fallback."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
+
+def _mock_response(text: str):
+    choice = MagicMock()
+    choice.message.content = text
+    resp = MagicMock()
+    resp.choices = [choice]
+    return resp
 
 
-@pytest.fixture(autouse=True)
-def _isolate_categories(tmp_path, monkeypatch):
-    """Isolate categories file."""
-    import src.config
-    data = tmp_path / "data"
-    data.mkdir()
-    monkeypatch.setattr(src.config, "DATA_DIR", data)
-    monkeypatch.setattr(src.config, "CATEGORIES_FILE", data / "categories.yml")
+def _mock_client(*responses, exceptions=None):
+    """Build a mock OpenAI client that returns the given responses in order.
 
-
-def _mock_llm_response(text: str):
-    """Build a mock OpenAI client returning given text."""
-    mock_choice = MagicMock()
-    mock_choice.message.content = text
-    mock_response = MagicMock()
-    mock_response.choices = [mock_choice]
-
+    Pass `exceptions=[True, False, ...]` to make specific calls raise instead
+    of returning a response. Aligned with `responses` by index.
+    """
     client = MagicMock()
-    client.chat.completions.create.return_value = mock_response
+    if exceptions is None:
+        client.chat.completions.create.side_effect = list(responses)
+    else:
+        effects = []
+        for i, resp in enumerate(responses):
+            if i < len(exceptions) and exceptions[i]:
+                effects.append(Exception("api error"))
+            else:
+                effects.append(resp)
+        client.chat.completions.create.side_effect = effects
     return client
 
 
-def test_categorize_returns_existing_category():
+def _seed(chat_id: int, mapping: dict[str, str]) -> None:
+    import yaml
+    from src.config import ensure_user_dirs, user_categories_file
+
+    ensure_user_dirs(chat_id)
+    user_categories_file(chat_id).write_text(yaml.dump(mapping), encoding="utf-8")
+
+
+def test_categorize_returns_existing_category(tmp_knowledge_dir, chat_id):
     """Known slug returned by LLM → (slug, False)."""
     from src.categorize import categorize_content
 
-    with patch("src.categorize.openai.OpenAI", return_value=_mock_llm_response("ai-agents")):
-        slug, is_new = categorize_content("AI Agents Tutorial", "content here")
-        assert slug == "ai-agents"
-        assert is_new is False
+    _seed(chat_id, {"ai-agents": "AI Agents"})
+    client = _mock_client(_mock_response("ai-agents"))
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "AI Agents Tutorial", "content here")
+
+    assert slug == "ai-agents"
+    assert is_new is False
 
 
-def test_categorize_returns_new_valid_slug():
+def test_categorize_returns_new_valid_slug(tmp_knowledge_dir, chat_id):
     """Unknown but valid slug → (slug, True)."""
     from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
 
-    with patch("src.categorize.openai.OpenAI", return_value=_mock_llm_response("machine-learning")):
-        slug, is_new = categorize_content("ML Tutorial", "content")
-        assert slug == "machine-learning"
-        assert is_new is True
+    ensure_user_dirs(chat_id)
+    client = _mock_client(_mock_response("machine-learning"))
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "ML Tutorial", "content")
+
+    assert slug == "machine-learning"
+    assert is_new is True
 
 
-def test_categorize_rejects_long_slug():
-    """Slug > 30 chars → fallback to ai-news."""
+def test_categorize_long_slug_triggers_fresh_generation(tmp_knowledge_dir, chat_id):
+    """Malformed slug → second LLM call generates a fresh one → (new_slug, True)."""
     from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
 
-    long_slug = "a" * 50
-    with patch("src.categorize.openai.OpenAI", return_value=_mock_llm_response(long_slug)):
-        slug, is_new = categorize_content("Title", "content")
-        assert slug == "ai-news"
-        assert is_new is False
+    ensure_user_dirs(chat_id)
+    client = _mock_client(
+        _mock_response("a" * 50),
+        _mock_response('{"slug": "robotics", "description": "Robotics & Automation"}'),
+    )
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "robotics"
+    assert is_new is True
 
 
-def test_categorize_rejects_non_alnum_slug():
-    """Slug with special chars → fallback."""
+def test_categorize_non_alnum_slug_triggers_fresh_generation(tmp_knowledge_dir, chat_id):
+    """Slug with special chars → fresh-generation kicks in."""
     from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
 
-    with patch("src.categorize.openai.OpenAI", return_value=_mock_llm_response("cat/../hack")):
-        slug, is_new = categorize_content("Title", "content")
-        assert slug == "ai-news"
-        assert is_new is False
+    ensure_user_dirs(chat_id)
+    client = _mock_client(
+        _mock_response("cat/../hack"),
+        _mock_response('{"slug": "security-research", "description": "Sec Research"}'),
+    )
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "security-research"
+    assert is_new is True
 
 
-def test_categorize_fallback_on_api_error():
-    """API exception → ('ai-news', False)."""
+def test_categorize_api_error_then_fresh_generation(tmp_knowledge_dir, chat_id):
+    """Primary call raises → second call generates a fresh slug."""
     from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
 
+    ensure_user_dirs(chat_id)
+    client = _mock_client(
+        _mock_response(""),  # placeholder, replaced by exception below
+        _mock_response('{"slug": "devops", "description": "DevOps"}'),
+        exceptions=[True, False],
+    )
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "devops"
+    assert is_new is True
+
+
+def test_categorize_both_calls_fail_falls_back_to_uncategorized(tmp_knowledge_dir, chat_id):
+    """Primary call raises, fresh-generation also fails → per-user 'uncategorized'."""
+    from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
+
+    ensure_user_dirs(chat_id)
     client = MagicMock()
     client.chat.completions.create.side_effect = Exception("API down")
     with patch("src.categorize.openai.OpenAI", return_value=client):
-        slug, is_new = categorize_content("Title", "content")
-        assert slug == "ai-news"
-        assert is_new is False
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "uncategorized"
+    assert is_new is True  # user doesn't have it yet → new
 
 
-# ── Auto-merge (SequenceMatcher similarity) ─────────────────────────────────
+def test_categorize_fresh_generation_auto_merged_into_existing(tmp_knowledge_dir, chat_id):
+    """Fresh slug that's near-duplicate of an existing category is merged, not re-added."""
+    from src.categorize import categorize_content
+
+    _seed(chat_id, {"robotics": "Robotics"})
+    client = _mock_client(
+        _mock_response("!!!garbage!!!"),
+        _mock_response('{"slug": "robotic", "description": "Robotic"}'),
+    )
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "robotics"
+    assert is_new is False
+
+
+def test_categorize_uncategorized_already_exists_is_not_new(tmp_knowledge_dir, chat_id):
+    """If user already has `uncategorized`, safety-net returns is_new=False."""
+    from src.categorize import categorize_content
+
+    _seed(chat_id, {"uncategorized": "Uncategorized"})
+    client = MagicMock()
+    client.chat.completions.create.side_effect = Exception("API down")
+    with patch("src.categorize.openai.OpenAI", return_value=client):
+        slug, is_new = categorize_content(chat_id, "Title", "content")
+
+    assert slug == "uncategorized"
+    assert is_new is False
+
+
+# ── Auto-merge (pure — no chat_id) ─────────────────────────────────────────
 
 
 def test_auto_merge_returns_existing_for_near_duplicate():
-    """A one-char-off slug from the LLM should merge into the existing one."""
     from src.categorize import _auto_merge
 
     existing = {"ai-agents": "AI Agents", "wordpress": "WordPress"}
-    # "ai-agent" (no trailing s) is ~0.94 similarity to "ai-agents"
     assert _auto_merge("ai-agent", existing) == "ai-agents"
 
 
 def test_auto_merge_returns_none_for_dissimilar_slug():
-    """A genuinely new topic should not be merged into anything."""
     from src.categorize import _auto_merge
 
     existing = {"ai-agents": "AI Agents", "wordpress": "WordPress"}
@@ -103,7 +183,6 @@ def test_auto_merge_returns_none_for_dissimilar_slug():
 
 
 def test_auto_merge_picks_closest_match():
-    """When multiple existing slugs are similar, pick the closest one."""
     from src.categorize import _auto_merge
 
     existing = {
@@ -111,7 +190,6 @@ def test_auto_merge_picks_closest_match():
         "ai-news": "AI News",
         "wordpress": "WP",
     }
-    # "ai-agent" is closer to "ai-agents" than to "ai-news"
     assert _auto_merge("ai-agent", existing) == "ai-agents"
 
 
@@ -121,37 +199,26 @@ def test_auto_merge_empty_categories_returns_none():
     assert _auto_merge("anything", {}) is None
 
 
-def test_categorize_llm_near_duplicate_is_auto_merged():
-    """End-to-end: LLM returns 'ai-agent', categorize_content returns 'ai-agents'."""
+def test_categorize_llm_near_duplicate_is_auto_merged(tmp_knowledge_dir, chat_id):
     from src.categorize import categorize_content
 
-    client = MagicMock()
-    choice = MagicMock()
-    choice.message.content = "ai-agent"
-    resp = MagicMock()
-    resp.choices = [choice]
-    client.chat.completions.create.return_value = resp
-
+    _seed(chat_id, {"ai-agents": "AI Agents"})
+    client = _mock_client(_mock_response("ai-agent"))
     with patch("src.categorize.openai.OpenAI", return_value=client):
-        slug, is_new = categorize_content("AI Agents Tutorial", "some content")
+        slug, is_new = categorize_content(chat_id, "AI Agents Tutorial", "some content")
 
-    assert slug == "ai-agents"   # existing default category
-    assert is_new is False       # merged, not created
+    assert slug == "ai-agents"
+    assert is_new is False
 
 
-def test_categorize_llm_genuinely_new_slug_is_new():
-    """End-to-end: dissimilar slug stays as new."""
+def test_categorize_llm_genuinely_new_slug_is_new(tmp_knowledge_dir, chat_id):
     from src.categorize import categorize_content
+    from src.config import ensure_user_dirs
 
-    client = MagicMock()
-    choice = MagicMock()
-    choice.message.content = "robotics"
-    resp = MagicMock()
-    resp.choices = [choice]
-    client.chat.completions.create.return_value = resp
-
+    ensure_user_dirs(chat_id)
+    client = _mock_client(_mock_response("robotics"))
     with patch("src.categorize.openai.OpenAI", return_value=client):
-        slug, is_new = categorize_content("Robot Arms Tutorial", "content")
+        slug, is_new = categorize_content(chat_id, "Robot Arms Tutorial", "content")
 
     assert slug == "robotics"
     assert is_new is True

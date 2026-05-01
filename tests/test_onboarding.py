@@ -1,4 +1,4 @@
-"""Tests for src.onboarding — pure state machine + draft commit."""
+"""Tests for src.onboarding — pure state machine + per-user draft commit."""
 
 from __future__ import annotations
 
@@ -33,18 +33,15 @@ def test_next_step_advances_within_range():
     from src.onboarding import STEPS, next_step
     assert next_step(0) == 1
     assert next_step(1) == 2
-    # Clamped at last index
     assert next_step(len(STEPS) - 1) == len(STEPS) - 1
 
 
 def test_callback_steps_set():
     from src.onboarding import CALLBACK_STEPS
-    # These steps don't accept text input
     assert "lang" in CALLBACK_STEPS
     assert "welcome" in CALLBACK_STEPS
     assert "categories" in CALLBACK_STEPS
     assert "channels" in CALLBACK_STEPS
-    # And these DO accept text
     assert "persona" not in CALLBACK_STEPS
     assert "learning" not in CALLBACK_STEPS
 
@@ -104,18 +101,18 @@ def _sample_draft() -> dict:
     }
 
 
-def test_apply_draft_writes_profile(tmp_knowledge_dir):
-    import src.config
+def test_apply_draft_writes_profile(tmp_knowledge_dir, chat_id):
+    from src.config import user_profile_file
     from src.onboarding import apply_draft
     from src.profile import init_profile, load_profile
 
-    init_profile()
-    summary = apply_draft(_sample_draft())
+    init_profile(chat_id)
+    summary = apply_draft(chat_id, _sample_draft())
 
     assert summary["profile_saved"] == 1
-    assert src.config.PROFILE_FILE.exists()
+    assert user_profile_file(chat_id).exists()
 
-    profile = load_profile()
+    profile = load_profile(chat_id)
     assert profile["language"] == "en"
     assert profile["persona"] == "Senior DevOps consultant"
     assert profile["actively_learning"] == ["AI agents", "RAG"]
@@ -123,100 +120,100 @@ def test_apply_draft_writes_profile(tmp_knowledge_dir):
     assert profile["not_interested_in"] == ["crypto"]
 
 
-def test_apply_draft_creates_selected_categories(tmp_knowledge_dir):
-    import src.config
+def test_apply_draft_creates_selected_categories(tmp_knowledge_dir, chat_id):
+    from src.config import user_categories_file
     from src.onboarding import apply_draft
     from src.profile import init_profile
 
-    init_profile()
-    summary = apply_draft(_sample_draft())
+    init_profile(chat_id)
+    summary = apply_draft(chat_id, _sample_draft())
 
     assert summary["categories_added"] == 2
-    assert src.config.CATEGORIES_FILE.exists()
-    data = yaml.safe_load(src.config.CATEGORIES_FILE.read_text("utf-8"))
+    path = user_categories_file(chat_id)
+    assert path.exists()
+    data = yaml.safe_load(path.read_text("utf-8"))
     assert "ai-agents" in data
     assert "devops-selfhost" in data
 
 
-def test_apply_draft_writes_channels_when_selected(tmp_knowledge_dir):
-    import src.config
+def test_apply_draft_writes_channels_when_selected(tmp_knowledge_dir, chat_id):
+    from src.config import user_channels_file
     from src.onboarding import apply_draft
     from src.profile import init_profile
 
-    init_profile()
+    init_profile(chat_id)
     draft = _sample_draft()
     draft["selected_channels"] = [
         {"name": "FakeCh", "id": "UC_fake", "category": "ai-agents", "enabled": True},
     ]
-    summary = apply_draft(draft)
+    summary = apply_draft(chat_id, draft)
 
     assert summary["channels_added"] == 1
-    data = yaml.safe_load(src.config.CHANNELS_FILE.read_text("utf-8"))
+    data = yaml.safe_load(user_channels_file(chat_id).read_text("utf-8"))
     assert data["channels"][0]["id"] == "UC_fake"
 
 
-def test_apply_draft_skips_channels_when_none_selected(tmp_knowledge_dir):
+def test_apply_draft_skips_channels_when_none_selected(tmp_knowledge_dir, chat_id):
     """No channels selected → channels.yml is not touched."""
-    import src.config
+    from src.config import user_channels_file
     from src.onboarding import apply_draft
     from src.profile import init_profile
 
-    init_profile()
-    assert not src.config.CHANNELS_FILE.exists()
-    apply_draft(_sample_draft())  # no channels
-    assert not src.config.CHANNELS_FILE.exists()
+    init_profile(chat_id)
+    path = user_channels_file(chat_id)
+    assert not path.exists()
+    apply_draft(chat_id, _sample_draft())
+    assert not path.exists()
 
 
-def test_apply_draft_idempotent_for_channels(tmp_knowledge_dir):
+def test_apply_draft_idempotent_for_channels(tmp_knowledge_dir, chat_id):
     """Re-running apply_draft with the same channel doesn't duplicate it."""
-    import src.config
+    from src.config import user_channels_file
     from src.onboarding import apply_draft
     from src.profile import init_profile
 
-    init_profile()
+    init_profile(chat_id)
     ch = {"name": "FakeCh", "id": "UC_fake", "category": "ai-agents", "enabled": True}
     draft = {**_sample_draft(), "selected_channels": [ch]}
 
-    apply_draft(draft)
-    apply_draft(draft)
+    apply_draft(chat_id, draft)
+    apply_draft(chat_id, draft)
 
-    data = yaml.safe_load(src.config.CHANNELS_FILE.read_text("utf-8"))
+    data = yaml.safe_load(user_channels_file(chat_id).read_text("utf-8"))
     ids = [c["id"] for c in data["channels"]]
     assert ids.count("UC_fake") == 1
 
 
-def test_apply_draft_normalizes_unknown_language(tmp_knowledge_dir):
+def test_apply_draft_normalizes_unknown_language(tmp_knowledge_dir, chat_id):
     from src.onboarding import apply_draft
     from src.profile import init_profile, load_profile
 
-    init_profile()
+    init_profile(chat_id)
     draft = _sample_draft()
     draft["language"] = "klingon"
-    apply_draft(draft)
-    assert load_profile()["language"] == "en"  # fallback
+    apply_draft(chat_id, draft)
+    assert load_profile(chat_id)["language"] == "en"
 
 
-def test_apply_draft_preserves_russian_selection(tmp_knowledge_dir):
-    """Russian is still a valid World 10 choice — it round-trips as-is."""
+def test_apply_draft_preserves_russian_selection(tmp_knowledge_dir, chat_id):
     from src.onboarding import apply_draft
     from src.profile import init_profile, load_profile
 
-    init_profile()
+    init_profile(chat_id)
     draft = _sample_draft()
     draft["language"] = "ru"
-    apply_draft(draft)
-    assert load_profile()["language"] == "ru"
+    apply_draft(chat_id, draft)
+    assert load_profile(chat_id)["language"] == "ru"
 
 
-def test_apply_draft_handles_empty_draft(tmp_knowledge_dir):
-    """An empty-ish draft still writes a valid profile."""
+def test_apply_draft_handles_empty_draft(tmp_knowledge_dir, chat_id):
     from src.onboarding import apply_draft, new_draft
     from src.profile import init_profile, load_profile
 
-    init_profile()
-    apply_draft(new_draft())
+    init_profile(chat_id)
+    apply_draft(chat_id, new_draft())
 
-    profile = load_profile()
+    profile = load_profile(chat_id)
     assert profile["language"] == "en"
     assert profile["persona"] == ""
     assert profile["known_stack"] == []

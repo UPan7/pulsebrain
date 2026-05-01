@@ -1,4 +1,4 @@
-"""Shared pipeline: content -> summary -> categorize -> save -> notify."""
+"""Shared per-user pipeline: content -> summary -> categorize -> save -> notify."""
 
 from __future__ import annotations
 
@@ -20,17 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 def _process_content(
+    chat_id: int,
     url: str,
     source_type: str,
     category: str | None = None,
     upload_date: str | None = None,
 ) -> dict[str, Any] | None:
-    """Shared pipeline for any content type.
+    """Shared pipeline for any content type, scoped to ``chat_id``.
 
     Returns dict with entry info on success, or dict with 'error' key on failure.
-    Error strings are rendered in the current profile language via t().
+    Error strings are rendered in the caller's profile language via :func:`t`.
     """
-    lang = get_language()
+    lang = get_language(chat_id)
 
     # ── Extract ─────────────────────────────────────────────────────────────
     if source_type == "youtube_video":
@@ -39,7 +40,7 @@ def _process_content(
             return {"error": t("pipeline_err_video_id_extract", lang)}
 
         content_id = make_content_id("youtube_video", video_id)
-        if is_processed(content_id):
+        if is_processed(chat_id, content_id):
             return {"error": t("pipeline_err_video_already_processed", lang)}
 
         meta = get_video_metadata(video_id)
@@ -57,7 +58,7 @@ def _process_content(
 
     elif source_type == "web_article":
         content_id = make_content_id("web_article", url)
-        if is_processed(content_id):
+        if is_processed(chat_id, content_id):
             return {"error": t("pipeline_err_article_already_processed", lang)}
 
         article = extract_web_article(url)
@@ -75,6 +76,7 @@ def _process_content(
 
     # ── Summarize ───────────────────────────────────────────────────────────
     summary = summarize_content(
+        chat_id,
         content=content,
         title=title,
         source_name=source_name,
@@ -85,17 +87,12 @@ def _process_content(
         return {"error": t("pipeline_err_summarize_failed", lang, title=title)}
 
     # ── Categorize ──────────────────────────────────────────────────────────
-    # User-supplied category wins; otherwise run the dynamic categorizer.
-    # We intentionally do NOT read any "suggested_category" from the summary
-    # dict — summarize_content no longer infers categories (see its docstring).
     if category:
         final_category, is_new_category = category, False
     else:
-        final_category, is_new_category = categorize_content(title, content)
+        final_category, is_new_category = categorize_content(chat_id, title, content)
 
     # ── Stage (awaiting user approval) ──────────────────────────────────────
-    # raw_text is the lossless original — saved alongside the .md on commit
-    # so the knowledge base can be used as a corpus for future tools/queries.
     stage_kwargs: dict[str, Any] = {
         "content_id": content_id,
         "source_url": url,
@@ -109,6 +106,8 @@ def _process_content(
         "topics": summary.get("topics", []),
         "summary_bullets": summary.get("summary_bullets", []),
         "detailed_notes": summary.get("detailed_notes", ""),
+        "deep_dive": summary.get("deep_dive"),
+        "length_mode": summary.get("length_mode", ""),
         "key_insights": summary.get("key_insights", []),
         "action_items": summary.get("action_items", []),
         "author": locals().get("author") if source_type == "web_article" else None,
@@ -116,8 +115,8 @@ def _process_content(
         "raw_text": content,
     }
 
-    pending_id = stage_pending(**stage_kwargs)
-    mark_processed(content_id, status="pending")
+    pending_id = stage_pending(chat_id, **stage_kwargs)
+    mark_processed(chat_id, content_id, status="pending")
 
     # ── Build result ────────────────────────────────────────────────────────
     result: dict[str, Any] = {
@@ -144,17 +143,19 @@ def _process_content(
 
 
 def process_youtube_video(
+    chat_id: int,
     url: str,
     category: str | None = None,
     upload_date: str | None = None,
 ) -> dict[str, Any] | None:
-    """Full pipeline for a YouTube video URL."""
-    return _process_content(url, "youtube_video", category=category, upload_date=upload_date)
+    """Full pipeline for a YouTube video URL, scoped to ``chat_id``."""
+    return _process_content(chat_id, url, "youtube_video", category=category, upload_date=upload_date)
 
 
 def process_web_article(
+    chat_id: int,
     url: str,
     category: str | None = None,
 ) -> dict[str, Any] | None:
-    """Full pipeline for a web article URL."""
-    return _process_content(url, "web_article", category=category)
+    """Full pipeline for a web article URL, scoped to ``chat_id``."""
+    return _process_content(chat_id, url, "web_article", category=category)

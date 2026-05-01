@@ -1,8 +1,9 @@
 """Starter lists offered by the Phase 5.3 onboarding wizard.
 
-PRESET_CATEGORIES extends the minimal src.config._DEFAULT_CATEGORIES
-with a broader starter set so new users have sensible defaults to
-pick from.
+PRESET_CATEGORIES is the curated starter menu shown to new users during
+the wizard. Each user's categories.yml ends up containing ONLY the slugs
+they explicitly toggle on here (plus anything the LLM discovers from
+their own content later) — categories are fully per-user, never shared.
 
 PRESET_CHANNELS is intentionally empty — populating it with specific
 YouTube handles would mean making up channel IDs the bot never

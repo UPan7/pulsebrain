@@ -83,9 +83,25 @@ STRINGS: dict[str, dict[str, str]] = {
             "Используй /help для списка команд."
         ),
         "welcome_first_run": (
-            "👋 Привет! Это твой персональный мозг.\n\n"
-            "Давай настроим его под тебя — займёт 3-5 минут. "
-            "В любой момент можно прервать командой /cancel."
+            "👋 Привет! Я PulseBrain — твой персональный агрегатор знаний.\n\n"
+            "Я решаю две проблемы:\n"
+            "• Ты сохраняешь видео и статьи «на потом» и никогда к ним не "
+            "возвращаешься.\n"
+            "• Ты тратишь 30 минут на контент, который оказывается водой.\n\n"
+            "Как:\n"
+            "• 📎 Кидай ссылку на YouTube или статью — за ~1 минуту получаешь "
+            "плотное саммари с оценкой релевантности. Решаешь, стоит ли "
+            "тратить время на оригинал, ДО того как его откроешь.\n"
+            "• 📡 Подпиши меня на YouTube-каналы — буду следить, оценивать "
+            "каждое новое видео и класть в очередь только то, что стоит "
+            "твоего времени.\n"
+            "• 💬 Задавай вопросы обычным текстом — поищу в твоей базе и "
+            "отвечу со ссылками на источники.\n"
+            "• 📂 Всё остаётся твоим — обычные markdown-файлы, никакого "
+            "vendor lock-in.\n\n"
+            "Давай потратим 3 минуты на настройку профиля — чтобы я оценивал "
+            "релевантность конкретно под тебя. /help — все команды, "
+            "/cancel — выйти в любой момент."
         ),
         "help_text": (
             "📖 Команды:\n\n"
@@ -239,6 +255,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Средняя релевантность: {avg}/10\n"
             "📅 За эту неделю: {this_week}\n"
         ),
+        "status_title": "🤖 Статус PulseBrain",
+        "stats_title": "📊 Статистика базы знаний",
+        "stats_total": "📁 Всего записей: {total}",
+        "stats_videos": "📺 YouTube-видео: {videos}",
+        "stats_articles": "📰 Статей: {articles}",
+        "stats_by_category_header": "По категориям:",
+        "stats_category_item": "• {cat}: {count} записей",
+        "stats_this_week": "За эту неделю: {count} новых записей",
+        "stats_avg_relevance": "Средняя релевантность: {avg}/10",
+        "stats_top_sources_header": "Топ источников:",
+        "stats_top_source_item": "• {name}: {count} записей",
         "run_starting": "🔄 Запускаю проверку каналов...",
         "run_processed": "✅ Обработано {count} новых видео.",
         "run_nothing": "✅ Новых видео не найдено.",
@@ -342,9 +369,25 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use /help for the command list."
         ),
         "welcome_first_run": (
-            "👋 Hi! This is your personal brain.\n\n"
-            "Let's set it up — takes 3-5 minutes. You can bail at any "
-            "time with /cancel."
+            "👋 Hi! I'm PulseBrain — your personal knowledge aggregator.\n\n"
+            "I solve two problems:\n"
+            "• You save videos and articles \"for later\" and never come "
+            "back to them.\n"
+            "• You burn 30 minutes on content that turns out to be fluff.\n\n"
+            "Here's how:\n"
+            "• 📎 Drop me a YouTube or article link — in ~1 minute you get a "
+            "dense summary with a relevance score. Decide if the original "
+            "is worth your time BEFORE opening it.\n"
+            "• 📡 Subscribe me to YouTube channels — I watch them on "
+            "schedule, score every new video, and queue only the ones "
+            "worth your review.\n"
+            "• 💬 Ask me questions in plain text — I search your knowledge "
+            "base and answer with source citations.\n"
+            "• 📂 Everything stays yours — plain markdown files, no cloud "
+            "lock-in.\n\n"
+            "Let's take 3 minutes to set up your profile so I can score "
+            "relevance for what YOU actually care about. /help for all "
+            "commands, /cancel to stop."
         ),
         "help_text": (
             "📖 Commands:\n\n"
@@ -497,6 +540,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Avg relevance: {avg}/10\n"
             "📅 This week: {this_week}\n"
         ),
+        "status_title": "🤖 PulseBrain Status",
+        "stats_title": "📊 Knowledge Base Stats",
+        "stats_total": "📁 Total entries: {total}",
+        "stats_videos": "📺 YouTube videos: {videos}",
+        "stats_articles": "📰 Web articles: {articles}",
+        "stats_by_category_header": "By category:",
+        "stats_category_item": "• {cat}: {count} entries",
+        "stats_this_week": "This week: {count} new entries",
+        "stats_avg_relevance": "Avg relevance: {avg}/10",
+        "stats_top_sources_header": "Top sources:",
+        "stats_top_source_item": "• {name}: {count} entries",
         "run_starting": "🔄 Running channel check...",
         "run_processed": "✅ Processed {count} new videos.",
         "run_nothing": "✅ No new videos found.",
@@ -602,9 +656,28 @@ STRINGS: dict[str, dict[str, str]] = {
             "Nutze /help für die Befehlsliste."
         ),
         "welcome_first_run": (
-            "👋 Hallo! Das ist dein persönliches Gehirn.\n\n"
-            "Richten wir es ein — dauert 3-5 Minuten. Du kannst jederzeit "
-            "mit /cancel abbrechen."
+            "👋 Hallo! Ich bin PulseBrain — dein persönlicher "
+            "Wissens-Aggregator.\n\n"
+            "Ich löse zwei Probleme:\n"
+            "• Du speicherst Videos und Artikel „für später\" und kommst "
+            "nie darauf zurück.\n"
+            "• Du verbrennst 30 Minuten an Inhalten, die sich als leer "
+            "herausstellen.\n\n"
+            "So funktioniert's:\n"
+            "• 📎 Schick mir einen YouTube- oder Artikel-Link — in etwa "
+            "1 Minute bekommst du eine dichte Zusammenfassung mit "
+            "Relevanz-Score. Du entscheidest VOR dem Öffnen, ob es deine "
+            "Zeit wert ist.\n"
+            "• 📡 Abonniere mich zu YouTube-Kanälen — ich überwache sie, "
+            "bewerte jedes neue Video und stelle nur die lohnenswerten zur "
+            "Freigabe.\n"
+            "• 💬 Stelle Fragen im Klartext — ich durchsuche deine "
+            "Wissensbasis und antworte mit Quellenangaben.\n"
+            "• 📂 Alles bleibt bei dir — einfache Markdown-Dateien, kein "
+            "Cloud-Lock-in.\n\n"
+            "Nehmen wir uns 3 Minuten für dein Profil, damit ich Relevanz "
+            "passend für DICH bewerte. /help für alle Befehle, /cancel "
+            "zum Abbrechen."
         ),
         "help_text": (
             "📖 Befehle:\n\n"
@@ -746,6 +819,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Ø Relevanz: {avg}/10\n"
             "📅 Diese Woche: {this_week}\n"
         ),
+        "status_title": "🤖 PulseBrain Status",
+        "stats_title": "📊 Wissensdatenbank-Statistik",
+        "stats_total": "📁 Einträge gesamt: {total}",
+        "stats_videos": "📺 YouTube-Videos: {videos}",
+        "stats_articles": "📰 Webartikel: {articles}",
+        "stats_by_category_header": "Nach Kategorie:",
+        "stats_category_item": "• {cat}: {count} Einträge",
+        "stats_this_week": "Diese Woche: {count} neue Einträge",
+        "stats_avg_relevance": "Ø Relevanz: {avg}/10",
+        "stats_top_sources_header": "Top-Quellen:",
+        "stats_top_source_item": "• {name}: {count} Einträge",
         "run_starting": "🔄 Starte Kanalprüfung...",
         "run_processed": "✅ {count} neue Videos verarbeitet.",
         "run_nothing": "✅ Keine neuen Videos gefunden.",
@@ -853,9 +937,26 @@ STRINGS: dict[str, dict[str, str]] = {
             "Utilise /help pour la liste des commandes."
         ),
         "welcome_first_run": (
-            "👋 Bonjour ! C'est ton cerveau personnel.\n\n"
-            "Configurons-le — ça prend 3-5 minutes. Tu peux abandonner à "
-            "tout moment avec /cancel."
+            "👋 Salut ! Je suis PulseBrain — ton agrégateur de "
+            "connaissances personnel.\n\n"
+            "Je résous deux problèmes :\n"
+            "• Tu sauvegardes des vidéos et articles « pour plus tard » et "
+            "tu n'y reviens jamais.\n"
+            "• Tu perds 30 minutes sur un contenu qui s'avère creux.\n\n"
+            "Comment ça marche :\n"
+            "• 📎 Envoie-moi un lien YouTube ou un article — en ~1 minute "
+            "tu obtiens un résumé dense avec un score de pertinence. Tu "
+            "décides si ça vaut ton temps AVANT d'ouvrir la source.\n"
+            "• 📡 Abonne-moi à des chaînes YouTube — je les surveille, note "
+            "chaque nouvelle vidéo et ne soumets que celles qui en valent "
+            "la peine.\n"
+            "• 💬 Pose-moi des questions en texte libre — je cherche dans "
+            "ta base et réponds avec les sources citées.\n"
+            "• 📂 Tout reste à toi — de simples fichiers markdown, pas de "
+            "lock-in cloud.\n\n"
+            "Prenons 3 minutes pour configurer ton profil, que je puisse "
+            "évaluer la pertinence pour TOI. /help pour toutes les "
+            "commandes, /cancel pour arrêter."
         ),
         "help_text": (
             "📖 Commandes :\n\n"
@@ -998,6 +1099,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Pertinence moy : {avg}/10\n"
             "📅 Cette semaine : {this_week}\n"
         ),
+        "status_title": "🤖 Statut PulseBrain",
+        "stats_title": "📊 Statistiques de la base de connaissances",
+        "stats_total": "📁 Total des entrées : {total}",
+        "stats_videos": "📺 Vidéos YouTube : {videos}",
+        "stats_articles": "📰 Articles web : {articles}",
+        "stats_by_category_header": "Par catégorie :",
+        "stats_category_item": "• {cat} : {count} entrées",
+        "stats_this_week": "Cette semaine : {count} nouvelles entrées",
+        "stats_avg_relevance": "Pertinence moyenne : {avg}/10",
+        "stats_top_sources_header": "Top sources :",
+        "stats_top_source_item": "• {name} : {count} entrées",
         "run_starting": "🔄 Lancement de la vérification des chaînes...",
         "run_processed": "✅ {count} nouvelles vidéos traitées.",
         "run_nothing": "✅ Aucune nouvelle vidéo trouvée.",
@@ -1102,9 +1214,25 @@ STRINGS: dict[str, dict[str, str]] = {
             "Usa /help para la lista de comandos."
         ),
         "welcome_first_run": (
-            "👋 ¡Hola! Este es tu cerebro personal.\n\n"
-            "Vamos a configurarlo — toma 3-5 minutos. Puedes abandonar en "
-            "cualquier momento con /cancel."
+            "👋 ¡Hola! Soy PulseBrain — tu agregador personal de "
+            "conocimiento.\n\n"
+            "Resuelvo dos problemas:\n"
+            "• Guardas videos y artículos «para después» y nunca vuelves a "
+            "ellos.\n"
+            "• Pierdes 30 minutos en contenido que resulta no valer nada.\n\n"
+            "Así funciono:\n"
+            "• 📎 Envíame un enlace de YouTube o un artículo — en ~1 minuto "
+            "recibes un resumen denso con puntuación de relevancia. Decides "
+            "si vale tu tiempo ANTES de abrir la fuente.\n"
+            "• 📡 Suscríbeme a canales de YouTube — los vigilo, puntúo cada "
+            "video nuevo y solo pongo en cola los que valen la pena.\n"
+            "• 💬 Pregúntame en texto libre — busco en tu base y respondo "
+            "citando las fuentes.\n"
+            "• 📂 Todo queda tuyo — archivos markdown simples, sin lock-in "
+            "en la nube.\n\n"
+            "Tres minutos configurando tu perfil para que yo mida la "
+            "relevancia según TÚ. /help para todos los comandos, "
+            "/cancel para salir."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1247,6 +1375,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Relevancia media: {avg}/10\n"
             "📅 Esta semana: {this_week}\n"
         ),
+        "status_title": "🤖 Estado de PulseBrain",
+        "stats_title": "📊 Estadísticas de la base de conocimiento",
+        "stats_total": "📁 Entradas totales: {total}",
+        "stats_videos": "📺 Vídeos de YouTube: {videos}",
+        "stats_articles": "📰 Artículos web: {articles}",
+        "stats_by_category_header": "Por categoría:",
+        "stats_category_item": "• {cat}: {count} entradas",
+        "stats_this_week": "Esta semana: {count} nuevas entradas",
+        "stats_avg_relevance": "Relevancia media: {avg}/10",
+        "stats_top_sources_header": "Principales fuentes:",
+        "stats_top_source_item": "• {name}: {count} entradas",
         "run_starting": "🔄 Comprobando canales...",
         "run_processed": "✅ Procesados {count} vídeos nuevos.",
         "run_nothing": "✅ No se encontraron vídeos nuevos.",
@@ -1351,9 +1490,24 @@ STRINGS: dict[str, dict[str, str]] = {
             "Usa /help per la lista dei comandi."
         ),
         "welcome_first_run": (
-            "👋 Ciao! Questo è il tuo cervello personale.\n\n"
-            "Configuriamolo — ci vogliono 3-5 minuti. Puoi interrompere in "
-            "qualsiasi momento con /cancel."
+            "👋 Ciao! Sono PulseBrain — il tuo aggregatore personale di "
+            "conoscenza.\n\n"
+            "Risolvo due problemi:\n"
+            "• Salvi video e articoli «per dopo» e non ci torni mai.\n"
+            "• Spendi 30 minuti su contenuto che si rivela fuffa.\n\n"
+            "Come:\n"
+            "• 📎 Mandami un link YouTube o un articolo — in ~1 minuto "
+            "ricevi un riassunto denso con punteggio di rilevanza. Decidi "
+            "se vale il tuo tempo PRIMA di aprire la fonte.\n"
+            "• 📡 Iscrivimi a canali YouTube — li controllo, valuto ogni "
+            "nuovo video e metto in coda solo quelli che valgono.\n"
+            "• 💬 Fammi domande in testo libero — cerco nella tua base e "
+            "rispondo citando le fonti.\n"
+            "• 📂 Tutto rimane tuo — semplici file markdown, niente lock-in "
+            "cloud.\n\n"
+            "Tre minuti per configurare il profilo così posso valutare la "
+            "rilevanza per TE. /help per tutti i comandi, /cancel per "
+            "uscire."
         ),
         "help_text": (
             "📖 Comandi:\n\n"
@@ -1495,6 +1649,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Rilevanza media: {avg}/10\n"
             "📅 Questa settimana: {this_week}\n"
         ),
+        "status_title": "🤖 Stato di PulseBrain",
+        "stats_title": "📊 Statistiche della base di conoscenza",
+        "stats_total": "📁 Voci totali: {total}",
+        "stats_videos": "📺 Video YouTube: {videos}",
+        "stats_articles": "📰 Articoli web: {articles}",
+        "stats_by_category_header": "Per categoria:",
+        "stats_category_item": "• {cat}: {count} voci",
+        "stats_this_week": "Questa settimana: {count} nuove voci",
+        "stats_avg_relevance": "Rilevanza media: {avg}/10",
+        "stats_top_sources_header": "Fonti principali:",
+        "stats_top_source_item": "• {name}: {count} voci",
         "run_starting": "🔄 Avvio controllo canali...",
         "run_processed": "✅ Elaborati {count} nuovi video.",
         "run_nothing": "✅ Nessun video nuovo trovato.",
@@ -1598,9 +1763,25 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use /help para a lista de comandos."
         ),
         "welcome_first_run": (
-            "👋 Olá! Este é o seu cérebro pessoal.\n\n"
-            "Vamos configurá-lo — leva 3-5 minutos. Você pode desistir a "
-            "qualquer momento com /cancel."
+            "👋 Olá! Sou o PulseBrain — seu agregador pessoal de "
+            "conhecimento.\n\n"
+            "Resolvo dois problemas:\n"
+            "• Você salva vídeos e artigos «para depois» e nunca volta "
+            "a eles.\n"
+            "• Você gasta 30 minutos em conteúdo que acaba sendo furada.\n\n"
+            "Como:\n"
+            "• 📎 Mande um link do YouTube ou artigo — em ~1 minuto você "
+            "recebe um resumo denso com pontuação de relevância. Decide "
+            "se vale seu tempo ANTES de abrir a fonte.\n"
+            "• 📡 Inscreva-me em canais do YouTube — eu monitoro, pontuo "
+            "cada vídeo novo e coloco na fila só os que valem a pena.\n"
+            "• 💬 Pergunte em texto livre — busco na sua base e respondo "
+            "citando as fontes.\n"
+            "• 📂 Tudo continua seu — arquivos markdown simples, sem "
+            "lock-in na nuvem.\n\n"
+            "Três minutos para configurar o perfil para eu avaliar a "
+            "relevância para VOCÊ. /help para todos os comandos, "
+            "/cancel para sair."
         ),
         "help_text": (
             "📖 Comandos:\n\n"
@@ -1741,6 +1922,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 Relevância média: {avg}/10\n"
             "📅 Esta semana: {this_week}\n"
         ),
+        "status_title": "🤖 Estado do PulseBrain",
+        "stats_title": "📊 Estatísticas da base de conhecimento",
+        "stats_total": "📁 Entradas totais: {total}",
+        "stats_videos": "📺 Vídeos do YouTube: {videos}",
+        "stats_articles": "📰 Artigos web: {articles}",
+        "stats_by_category_header": "Por categoria:",
+        "stats_category_item": "• {cat}: {count} entradas",
+        "stats_this_week": "Esta semana: {count} novas entradas",
+        "stats_avg_relevance": "Relevância média: {avg}/10",
+        "stats_top_sources_header": "Principais fontes:",
+        "stats_top_source_item": "• {name}: {count} entradas",
         "run_starting": "🔄 Executando verificação de canais...",
         "run_processed": "✅ Processados {count} vídeos novos.",
         "run_nothing": "✅ Nenhum vídeo novo encontrado.",
@@ -1844,8 +2036,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "使用 /help 查看命令列表。"
         ),
         "welcome_first_run": (
-            "👋 你好！这是你的个人大脑。\n\n"
-            "让我们来设置它 — 需要 3-5 分钟。你随时可以用 /cancel 中止。"
+            "👋 你好！我是 PulseBrain — 你的个人知识聚合器。\n\n"
+            "我解决两个问题：\n"
+            "• 你把视频和文章「留着以后看」，但从不回头。\n"
+            "• 你花 30 分钟看完一个结果毫无价值的内容。\n\n"
+            "怎么做：\n"
+            "• 📎 发我一个 YouTube 或文章链接 — 约 1 分钟后你就能得到一份"
+            "浓缩摘要和相关性评分。在打开原文之前就能判断它是否值得你花时间。\n"
+            "• 📡 订阅 YouTube 频道 — 我会定期监控，给每个新视频评分，"
+            "只把值得的放入审核队列。\n"
+            "• 💬 用自然语言提问 — 我会在你的知识库里搜索并附上来源回答。\n"
+            "• 📂 一切都是你的 — 简单的 markdown 文件，没有云端绑定。\n\n"
+            "花 3 分钟设置个人资料，让我根据你来评估相关性。"
+            "/help 查看所有命令，/cancel 可以随时退出。"
         ),
         "help_text": (
             "📖 命令：\n\n"
@@ -1979,6 +2182,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 平均相关性：{avg}/10\n"
             "📅 本周：{this_week}\n"
         ),
+        "status_title": "🤖 PulseBrain 状态",
+        "stats_title": "📊 知识库统计",
+        "stats_total": "📁 条目总数: {total}",
+        "stats_videos": "📺 YouTube 视频: {videos}",
+        "stats_articles": "📰 网页文章: {articles}",
+        "stats_by_category_header": "按类别:",
+        "stats_category_item": "• {cat}: {count} 条",
+        "stats_this_week": "本周: 新增 {count} 条",
+        "stats_avg_relevance": "平均相关性: {avg}/10",
+        "stats_top_sources_header": "主要来源:",
+        "stats_top_source_item": "• {name}: {count} 条",
         "run_starting": "🔄 开始检查频道...",
         "run_processed": "✅ 已处理 {count} 个新视频。",
         "run_nothing": "✅ 未找到新视频。",
@@ -2078,9 +2292,24 @@ STRINGS: dict[str, dict[str, str]] = {
             "コマンドリストは /help で確認できます。"
         ),
         "welcome_first_run": (
-            "👋 こんにちは！これはあなた専用の脳です。\n\n"
-            "セットアップしましょう — 3〜5 分かかります。いつでも /cancel "
-            "で中断できます。"
+            "👋 こんにちは！ PulseBrain です — あなた専用の"
+            "ナレッジ・アグリゲーター。\n\n"
+            "2 つの問題を解決します：\n"
+            "• 動画や記事を「後で読もう」と保存して、結局戻ってこない。\n"
+            "• 中身のない動画に 30 分を費やしてしまう。\n\n"
+            "仕組み：\n"
+            "• 📎 YouTube リンクや記事を送ってください — 約 1 分で密度の"
+            "高い要約と関連性スコアが返ります。原文を開く前に、時間を"
+            "かける価値があるかを判断できます。\n"
+            "• 📡 YouTube チャンネルを登録してください — 定期的にチェックし、"
+            "新しい動画にスコアを付け、価値のあるものだけを承認待ちに"
+            "入れます。\n"
+            "• 💬 自然文で質問してください — ナレッジベースを検索して、"
+            "出典付きで答えます。\n"
+            "• 📂 すべてあなたのもの — ただの markdown ファイル、クラウド"
+            "ロックインはありません。\n\n"
+            "3 分ほどでプロフィール設定をしましょう。あなたに合った関連性"
+            "評価ができます。/help で全コマンド、/cancel でいつでも中止。"
         ),
         "help_text": (
             "📖 コマンド：\n\n"
@@ -2217,6 +2446,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 平均関連性：{avg}/10\n"
             "📅 今週：{this_week}\n"
         ),
+        "status_title": "🤖 PulseBrain ステータス",
+        "stats_title": "📊 ナレッジベース統計",
+        "stats_total": "📁 総エントリー数: {total}",
+        "stats_videos": "📺 YouTube 動画: {videos}",
+        "stats_articles": "📰 ウェブ記事: {articles}",
+        "stats_by_category_header": "カテゴリ別:",
+        "stats_category_item": "• {cat}: {count} 件",
+        "stats_this_week": "今週: 新規 {count} 件",
+        "stats_avg_relevance": "平均関連度: {avg}/10",
+        "stats_top_sources_header": "主要ソース:",
+        "stats_top_source_item": "• {name}: {count} 件",
         "run_starting": "🔄 チャンネルチェックを実行中...",
         "run_processed": "✅ {count} 件の新しい動画を処理しました。",
         "run_nothing": "✅ 新しい動画はありませんでした。",
@@ -2320,9 +2560,21 @@ STRINGS: dict[str, dict[str, str]] = {
             "استخدم /help للاطلاع على قائمة الأوامر."
         ),
         "welcome_first_run": (
-            "👋 مرحباً! هذا عقلك الشخصي.\n\n"
-            "لنقم بإعداده — يستغرق 3-5 دقائق. يمكنك الإلغاء في أي وقت بـ "
-            "/cancel."
+            "👋 مرحباً! أنا PulseBrain — مجمّع المعرفة الشخصي الخاص بك.\n\n"
+            "أحلّ مشكلتين:\n"
+            "• تحفظ الفيديوهات والمقالات «للاحقاً» ولا تعود إليها أبداً.\n"
+            "• تضيّع 30 دقيقة على محتوى يتضح أنه بلا قيمة.\n\n"
+            "كيف:\n"
+            "• 📎 أرسل لي رابط يوتيوب أو مقال — خلال دقيقة تقريباً تحصل على "
+            "ملخص كثيف مع درجة الملاءمة. تقرر إذا كان يستحق وقتك قبل فتح "
+            "المصدر.\n"
+            "• 📡 اشترك في قنوات يوتيوب — أراقبها، أقيّم كل فيديو جديد، "
+            "وأضع في طابور المراجعة فقط ما يستحق.\n"
+            "• 💬 اسألني بنص حر — أبحث في قاعدة معرفتك وأجيب مع ذكر "
+            "المصادر.\n"
+            "• 📂 كل شيء يبقى لك — ملفات markdown بسيطة، بدون قفل سحابي.\n\n"
+            "ثلاث دقائق لإعداد ملفك الشخصي حتى أقيس الملاءمة وفقاً لك "
+            "أنت. /help لعرض كل الأوامر، /cancel للإلغاء في أي وقت."
         ),
         "help_text": (
             "📖 الأوامر:\n\n"
@@ -2459,6 +2711,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "📊 متوسط الأهمية: {avg}/10\n"
             "📅 هذا الأسبوع: {this_week}\n"
         ),
+        "status_title": "🤖 حالة PulseBrain",
+        "stats_title": "📊 إحصائيات قاعدة المعرفة",
+        "stats_total": "📁 إجمالي الإدخالات: {total}",
+        "stats_videos": "📺 مقاطع يوتيوب: {videos}",
+        "stats_articles": "📰 مقالات الويب: {articles}",
+        "stats_by_category_header": "حسب الفئة:",
+        "stats_category_item": "• {cat}: {count} إدخالات",
+        "stats_this_week": "هذا الأسبوع: {count} إدخالات جديدة",
+        "stats_avg_relevance": "متوسط الصلة: {avg}/10",
+        "stats_top_sources_header": "أهم المصادر:",
+        "stats_top_source_item": "• {name}: {count} إدخالات",
         "run_starting": "🔄 أبدأ فحص القنوات...",
         "run_processed": "✅ تمت معالجة {count} فيديو جديد.",
         "run_nothing": "✅ لم يُعثر على فيديوهات جديدة.",

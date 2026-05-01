@@ -8,13 +8,27 @@ from typing import Any
 
 import openai
 
-from src.config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
+from src.config import (
+    LLM_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_SEMAPHORE,
+)
 
 logger = logging.getLogger(__name__)
 
 
+_client_cache: openai.OpenAI | None = None
+
+
 def _client() -> openai.OpenAI:
-    return openai.OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+    """Lazy-cached OpenAI client — reuses the httpx session across calls."""
+    global _client_cache
+    if _client_cache is None:
+        _client_cache = openai.OpenAI(
+            base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY
+        )
+    return _client_cache
 
 # Language directive injected into SUMMARIZE_PROMPT. Determines what
 # language the bullets / notes / insights / action_items are written in.
@@ -64,6 +78,64 @@ LANGUAGE_DIRECTIVES: dict[str, str] = {
 }
 
 
+# Length budgets by transcript/article word count. The model picks the
+# base mode from word_count, then may collapse to "short" when it scores
+# relevance ≤ 4 (low-signal content stays tight regardless of length).
+# `deep_dive` is a new optional section with 3-4 technical subsections —
+# emitted only by long/xlong modes. Calibrated on the real corpus where
+# 3-hour Dave Ebbelaar builds came back at 380 words of narrative, which
+# users flagged as too sparse.
+_LENGTH_BUDGETS: dict[str, dict[str, object]] = {
+    "short":  {"bullets": "3-5", "notes": "200-300", "paragraphs": "2-3", "insights": "2-3", "actions": "2-3", "deep_dive": False, "dd_count": "0", "dd_words": "0"},
+    "medium": {"bullets": "5-7", "notes": "400-500", "paragraphs": "3",   "insights": "3-5", "actions": "3-5", "deep_dive": False, "dd_count": "0", "dd_words": "0"},
+    "long":   {"bullets": "6-8", "notes": "500-700", "paragraphs": "3-4", "insights": "4-6", "actions": "4-6", "deep_dive": True,  "dd_count": "3",   "dd_words": "100-150"},
+    "xlong":  {"bullets": "7-9", "notes": "600-900", "paragraphs": "4",   "insights": "5-7", "actions": "5-7", "deep_dive": True,  "dd_count": "4",   "dd_words": "100-150"},
+}
+
+_MODE_ORDER: list[str] = ["short", "medium", "long", "xlong"]
+
+
+def _pick_mode(word_count: int) -> str:
+    """Map transcript/article word count to a base length mode."""
+    if word_count < 1500:
+        return "short"
+    if word_count < 3500:
+        return "medium"
+    if word_count < 7000:
+        return "long"
+    return "xlong"
+
+
+def _render_budget_block(mode: str) -> str:
+    """Return the LENGTH BUDGET prompt fragment for *mode*."""
+    b = _LENGTH_BUDGETS[mode]
+    if b["deep_dive"]:
+        dd_line = (
+            f"- deep_dive: REQUIRED. {b['dd_count']} subsections, each "
+            f"{{heading, body}}. Body is {b['dd_words']} words of technical "
+            "detail — commands, names, versions, numbers, gotchas. Not a "
+            "re-list of bullets; different concrete material."
+        )
+    else:
+        dd_line = '- deep_dive: null (short/medium content does not need it).'
+    return (
+        f"LENGTH MODE: {mode}\n"
+        f"- summary_bullets: {b['bullets']} bullets, each ONE full sentence, "
+        "12-25 words. Open with the single most surprising or practical "
+        "takeaway — the hook.\n"
+        f"- detailed_notes: {b['paragraphs']} paragraphs, {b['notes']} words "
+        "total. NARRATIVE prose, not a re-list of the bullets. Tell the "
+        "story: what problem, what answer, what catch.\n"
+        f"- key_insights: {b['insights']} \"aha\" moments, each 10-20 words. "
+        "Non-obvious claims the user wouldn't know without watching.\n"
+        f"- action_items: {b['actions']} concrete next steps, each 8-20 "
+        "words. NO generic \"try X\", \"consider Y\" — instead \"deploy X "
+        "in docker-compose\", \"replace Y with Z in the N8N workflow\".\n"
+        f"{dd_line}\n"
+        "- topics: 3-6 short kebab-case slugs."
+    )
+
+
 SUMMARIZE_PROMPT = """\
 You are curating a personal tech knowledge base. The user reads every
 summary you produce to decide whether to spend time on the original.
@@ -87,19 +159,18 @@ WRITING VOICE — apply to every text field:
 - Distinguish opinion from fact when it matters: "per the author",
   "in their benchmark", "in their production setup".
 
-LENGTH BUDGET — total summary must be readable in ~2 minutes (≤500 words).
-Scale down for short content. NEVER exceed these caps:
-- summary_bullets: 3-6 bullets, each ONE full sentence, 12-25 words. Open
-  with the single most surprising or practical takeaway — the hook.
-- detailed_notes: 2-3 short paragraphs, 200-300 words total. NARRATIVE
-  prose, not a re-list of the bullets. Tell the story: what problem,
-  what answer, what catch.
-- key_insights: 2-4 "aha" moments, each 10-20 words. Non-obvious claims
-  the user wouldn't know without watching.
-- action_items: 2-4 concrete next steps, each 8-20 words. NO generic
-  "try X", "consider Y", "study Z" — instead "deploy X in docker-compose",
-  "replace Y with Z in the N8N workflow".
-- topics: 3-6 short kebab-case slugs.
+LENGTH BUDGET — scales with content length (≈{content_words} words of
+source). A 10-minute clip should not get the same budget as a 3-hour
+masterclass. Use the mode below. Over/undershoot by a bullet or 50 words
+is fine; inverting the mode is not.
+
+{length_budget_block}
+
+RELEVANCE OVERRIDE — after you score relevance (see rubric below):
+- If relevance ≤ 4 → COLLAPSE to the short-mode budget regardless of
+  what word_count said. Low-signal content stays tight; the user will
+  skip it anyway. Set deep_dive to null.
+- Otherwise → use the mode above.
 
 CONTENT RULES:
 - Skip intros, sponsor segments, fluff, promo, "subscribe to my channel".
@@ -133,14 +204,16 @@ CONTENT METADATA:
 - Type: {source_type}
 - Published: {date}
 
-OUTPUT FORMAT (valid JSON only, no markdown fences, no commentary):
+OUTPUT FORMAT (valid JSON only, no markdown fences, no commentary).
+Score relevance FIRST so it can drive your length choices:
 {{
+  "relevance_score": <1-10>,
+  "topics": ["...", "..."],
   "summary_bullets": ["...", "..."],
   "detailed_notes": "...",
+  "deep_dive": [{{"heading": "...", "body": "..."}}, ...] or null,
   "key_insights": ["...", "..."],
-  "action_items": ["...", "..."],
-  "topics": ["...", "..."],
-  "relevance_score": <1-10>
+  "action_items": ["...", "..."]
 }}
 
 CONTENT:
@@ -148,6 +221,7 @@ CONTENT:
 
 
 def summarize_content(
+    chat_id: int,
     content: str,
     title: str,
     source_name: str,
@@ -157,16 +231,23 @@ def summarize_content(
     """Send content to LLM via OpenRouter and get structured summary back.
 
     Category inference is intentionally NOT done here — see
-    src/categorize.py:categorize_content. Keeping the two LLM calls
+    :func:`src.categorize.categorize_content`. Keeping the two LLM calls
     separate avoids the summarize prompt copying its example value
     verbatim (which used to force every entry into 'ai-agents').
 
-    Language and relevance scoring are driven by the user profile
-    (src.profile) — the summary output is written in profile.language
-    and the LLM sees a USER CONTEXT block listing stack / learning
-    goals / rejected topics so it can anchor the relevance rubric.
+    Language and relevance scoring are driven by ``chat_id``'s profile
+    — the summary output is written in their configured language and
+    the LLM sees a USER CONTEXT block listing stack / learning goals /
+    rejected topics so it can anchor the relevance rubric to that user.
     """
     client = _client()
+
+    # Pick length mode from the ORIGINAL word count, before truncation,
+    # so a 3-hour talk still gets an xlong budget even though we chop
+    # its transcript for the prompt. Mode drives budget inlined below.
+    content_words = len(content.split())
+    length_mode = _pick_mode(content_words)
+    length_budget_block = _render_budget_block(length_mode)
 
     # Truncate content to ~100k chars to stay within context limits
     max_content_len = 100_000
@@ -174,15 +255,21 @@ def summarize_content(
         content = content[:max_content_len] + "\n\n[... content truncated ...]"
 
     # Build the USER CONTEXT block + pick the language directive from
-    # the current profile. Both are best-effort — a missing profile
-    # falls through to neutral defaults so the summarizer still works.
-    from src.profile import build_relevance_context, format_relevance_context
+    # the caller's profile. A genuine failure (parse error, disk error)
+    # is logged loudly with chat_id so it doesn't silently degrade the
+    # user's language / persona context across every summary. Language
+    # at least always comes from get_language(), which is bulletproof.
+    from src.profile import build_relevance_context, format_relevance_context, get_language
 
     try:
-        ctx = build_relevance_context()
+        ctx = build_relevance_context(chat_id)
     except Exception as exc:
-        logger.warning("Failed to build relevance context: %s", exc)
-        ctx = {"language": "en"}
+        logger.error(
+            "Failed to build relevance context for chat_id=%s: %s — "
+            "falling back to language-only context",
+            chat_id, exc,
+        )
+        ctx = {"language": get_language(chat_id)}
 
     user_context_block = format_relevance_context(ctx)
     language = ctx.get("language", "en")
@@ -193,6 +280,8 @@ def summarize_content(
     prompt = SUMMARIZE_PROMPT.format(
         user_context=user_context_block,
         language_directive=language_directive,
+        length_budget_block=length_budget_block,
+        content_words=content_words,
         title=title,
         source_name=source_name,
         source_type=source_type,
@@ -202,13 +291,19 @@ def summarize_content(
 
     for attempt in range(2):
         try:
-            response = client.chat.completions.create(
-                model=LLM_MODEL,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            with OPENROUTER_SEMAPHORE:
+                response = client.chat.completions.create(
+                    model=LLM_MODEL,
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
             raw = response.choices[0].message.content.strip()
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            # Tag the picked mode on the response so downstream code can
+            # persist it for analytics / debugging. Model doesn't need
+            # to emit this itself.
+            parsed.setdefault("length_mode", length_mode)
+            return parsed
         except json.JSONDecodeError as exc:
             logger.warning("JSON parse error on attempt %d: %s", attempt + 1, exc)
             if attempt == 0:
@@ -233,7 +328,7 @@ You are a knowledge assistant. Answer the user's question based ONLY \
 on the provided sources from their personal knowledge base. \
 If the sources don't contain relevant information, say so honestly.
 Always cite which source each insight comes from.
-Answer in Russian."""
+{language_directive}"""
 
 QUESTION_USER_PROMPT = """\
 Context from knowledge base:
@@ -244,8 +339,17 @@ Context from knowledge base:
 User question: {question}"""
 
 
-def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
-    """Answer a free-form question using knowledge base sources."""
+def answer_question(chat_id: int, question: str, sources: list[dict[str, str]]) -> str | None:
+    """Answer a free-form question using ``chat_id``'s knowledge base sources.
+
+    The answer is written in the caller's configured profile language.
+    """
+    from src.profile import get_language
+
+    lang = get_language(chat_id)
+    language_directive = LANGUAGE_DIRECTIVES.get(lang, LANGUAGE_DIRECTIVES["en"])
+    system_prompt = QUESTION_SYSTEM_PROMPT.format(language_directive=language_directive)
+
     client = _client()
 
     # Build context block from sources
@@ -263,14 +367,15 @@ def answer_question(question: str, sources: list[dict[str, str]]) -> str | None:
     user_prompt = QUESTION_USER_PROMPT.format(context=context, question=question)
 
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            max_tokens=2048,
-            messages=[
-                {"role": "system", "content": QUESTION_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        with OPENROUTER_SEMAPHORE:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                max_tokens=2048,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
         return response.choices[0].message.content.strip()
     except Exception as exc:
         logger.error("Question answering failed: %s", exc)

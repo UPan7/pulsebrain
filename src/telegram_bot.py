@@ -56,6 +56,9 @@ from src.storage import (
     get_recent_entries,
     get_source_text_path,
     get_stats,
+    is_processed,
+    make_content_id,
+    mark_processed,
     read_entry_markdown,
     search_for_question,
     search_knowledge,
@@ -1357,7 +1360,7 @@ async def _handle_new_category_input(
                     ),
                     InlineKeyboardButton(
                         t("new_cat_btn_no", lang),
-                        callback_data="fetch_skip",
+                        callback_data=f"fetch_skip:{pending['id']}",
                     ),
                 ]
             ]),
@@ -1398,6 +1401,23 @@ def _category_keyboard(prefix: str) -> InlineKeyboardMarkup:
         )
     ])
     return InlineKeyboardMarkup(buttons)
+
+
+def _mark_remaining_channel_videos_skipped(channel_id: str) -> None:
+    """Mark all current RSS entries for *channel_id* as processed/skipped.
+
+    Called after the initial "fetch 3 recent" (or "skip") flow so the
+    scheduler doesn't process the channel's entire back-catalog on its
+    next run. Videos that were already processed by the 3-video fetch
+    are unaffected (idempotent).
+    """
+    from src.scheduler import fetch_channel_videos
+
+    videos = fetch_channel_videos(channel_id)
+    for video in videos:
+        content_id = make_content_id("youtube_video", video["video_id"])
+        if not is_processed(content_id):
+            mark_processed(content_id, status="skipped")
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1537,7 +1557,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     ),
                     InlineKeyboardButton(
                         t("new_cat_btn_no", lang),
-                        callback_data="fetch_skip",
+                        callback_data=f"fetch_skip:{pending['id']}",
                     ),
                 ]
             ]),
@@ -1560,12 +1580,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             if result and "error" not in result:
                 processed += 1
 
+        # Mark all other RSS entries as skipped so the scheduler
+        # doesn't process the entire back-catalog on the next run.
+        await asyncio.to_thread(
+            _mark_remaining_channel_videos_skipped, channel_id,
+        )
+
         await query.message.reply_text(
             t("fetch_processed", lang, done=processed, total=len(video_ids))
         )
 
-    elif data == "fetch_skip":
+    elif data.startswith("fetch_skip"):
         await query.edit_message_reply_markup(reply_markup=None)
+        # Mark all current RSS entries as skipped so the scheduler
+        # doesn't process the back-catalog on the next run.
+        if ":" in data:
+            channel_id = data.split(":", 1)[1]
+            await asyncio.to_thread(
+                _mark_remaining_channel_videos_skipped, channel_id,
+            )
         await query.message.reply_text(t("fetch_skipped", lang))
 
     # ── /get browser flow ───────────────────────────────────────────────────

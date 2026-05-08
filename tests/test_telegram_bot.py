@@ -510,7 +510,8 @@ async def test_cmd_remove_no_args():
 
 
 @pytest.mark.asyncio
-async def test_cmd_remove_substring_match():
+async def test_cmd_remove_shows_pause_delete_keyboard():
+    """Matching channel → confirmation keyboard with Pause and Delete."""
     from src.telegram_bot import cmd_remove
 
     update = _make_update(chat_id=12345)
@@ -519,12 +520,101 @@ async def test_cmd_remove_substring_match():
     with (
         patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
         patch("src.telegram_bot.load_channels", return_value=channels),
-        patch("src.telegram_bot.save_channels") as mock_save,
     ):
         await cmd_remove(update, ctx)
 
+    call = update.message.reply_text.call_args
+    keyboard = call.kwargs["reply_markup"]
+    buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+    assert len(buttons) == 2
+    assert any("chpause:" in b.callback_data for b in buttons)
+    assert any("chdel:" in b.callback_data for b in buttons)
+
+
+@pytest.mark.asyncio
+async def test_callback_chpause_disables_channel():
+    """chpause callback → sets enabled=False and saves."""
+    from src.telegram_bot import callback_handler
+
+    channels = [{"name": "Fireship", "id": "UC1", "category": "ai-news", "enabled": True}]
+    update = _make_callback_update(data="chpause:UC1")
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
+        patch("src.telegram_bot.load_channels", return_value=channels),
+        patch("src.telegram_bot.save_channels") as mock_save,
+    ):
+        await callback_handler(update, ctx)
+
     mock_save.assert_called_once()
     assert channels[0]["enabled"] is False
+    update.callback_query.edit_message_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_callback_chdel_removes_channel_entirely():
+    """chdel callback → channel removed from list."""
+    from src.telegram_bot import callback_handler
+
+    channels = [
+        {"name": "Fireship", "id": "UC1", "category": "ai-news", "enabled": True},
+        {"name": "Other", "id": "UC2", "category": "devops", "enabled": True},
+    ]
+    update = _make_callback_update(data="chdel:UC1")
+    ctx = _make_context()
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
+        patch("src.telegram_bot.load_channels", return_value=channels),
+        patch("src.telegram_bot.save_channels") as mock_save,
+    ):
+        await callback_handler(update, ctx)
+
+    saved = mock_save.call_args[0][1]
+    assert len(saved) == 1
+    assert saved[0]["id"] == "UC2"
+
+
+@pytest.mark.asyncio
+async def test_cmd_add_reenables_paused_channel():
+    """Adding a paused channel re-enables it instead of rejecting."""
+    from src.telegram_bot import cmd_add
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["https://youtube.com/@fireship"])
+    channels = [{"name": "Fireship", "id": "UC1", "category": "ai-news", "enabled": False}]
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
+        patch("src.telegram_bot.resolve_channel_id", return_value=("UC1", "Fireship")),
+        patch("src.telegram_bot.load_channels", return_value=channels),
+        patch("src.telegram_bot.save_channels") as mock_save,
+    ):
+        await cmd_add(update, ctx)
+
+    mock_save.assert_called_once()
+    assert channels[0]["enabled"] is True
+    text = update.message.reply_text.call_args[0][0]
+    assert "re-enabled" in text.lower() or "активен" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_add_still_rejects_active_duplicate():
+    """Adding an already-active channel → 'already tracked' rejection."""
+    from src.telegram_bot import cmd_add
+
+    update = _make_update(chat_id=12345)
+    ctx = _make_context(args=["https://youtube.com/@fireship"])
+    channels = [{"name": "Fireship", "id": "UC1", "category": "ai-news", "enabled": True}]
+    with (
+        patch("src.telegram_bot.TELEGRAM_CHAT_IDS", [12345]),
+        patch("src.telegram_bot.resolve_channel_id", return_value=("UC1", "Fireship")),
+        patch("src.telegram_bot.load_channels", return_value=channels),
+        patch("src.telegram_bot.save_channels") as mock_save,
+    ):
+        await cmd_add(update, ctx)
+
+    mock_save.assert_not_called()
+    text = update.message.reply_text.call_args[0][0]
+    assert "already" in text.lower() or "уже" in text.lower()
 
 
 @pytest.mark.asyncio

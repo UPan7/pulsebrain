@@ -590,6 +590,15 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     channels = load_channels(chat_id)
     for ch in channels:
         if ch["id"] == channel_id:
+            if not ch.get("enabled", True):
+                ch["enabled"] = True
+                if category:
+                    ch["category"] = category
+                save_channels(chat_id, channels)
+                await update.message.reply_text(
+                    t("add_reenabled", lang, name=channel_name)
+                )
+                return
             await update.message.reply_text(
                 t("add_already_tracked", lang, name=channel_name)
             )
@@ -629,21 +638,29 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     name_query = " ".join(args).lower()
     channels = load_channels(chat_id)
-    found = False
     for ch in channels:
         if ch["name"].lower() == name_query or name_query in ch["name"].lower():
-            ch["enabled"] = False
-            found = True
-            save_channels(chat_id, channels)
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        t("remove_btn_pause", lang),
+                        callback_data=f"chpause:{ch['id']}",
+                    ),
+                    InlineKeyboardButton(
+                        t("remove_btn_delete", lang),
+                        callback_data=f"chdel:{ch['id']}",
+                    ),
+                ]
+            ])
             await update.message.reply_text(
-                t("remove_disabled", lang, name=ch["name"])
+                t("remove_confirm_prompt", lang, name=ch["name"]),
+                reply_markup=keyboard,
             )
-            break
+            return
 
-    if not found:
-        await update.message.reply_text(
-            t("remove_not_found", lang, name=name_query)
-        )
+    await update.message.reply_text(
+        t("remove_not_found", lang, name=name_query)
+    )
 
 
 @authorized
@@ -1355,6 +1372,41 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
+    # ── Channel pause / delete (/remove flow) ────────────────────────────
+    if data.startswith("chpause:"):
+        channel_id = data.split(":", 1)[1]
+        channels = load_channels(chat_id)
+        for ch in channels:
+            if ch["id"] == channel_id:
+                ch["enabled"] = False
+                save_channels(chat_id, channels)
+                await query.edit_message_text(
+                    t("remove_disabled", lang, name=ch["name"])
+                )
+                return
+        await query.edit_message_text(t("remove_not_found", lang, name="?"))
+        return
+
+    if data.startswith("chdel:"):
+        channel_id = data.split(":", 1)[1]
+        channels = load_channels(chat_id)
+        removed_name = None
+        new_channels = []
+        for ch in channels:
+            if ch["id"] == channel_id:
+                removed_name = ch["name"]
+            else:
+                new_channels.append(ch)
+        if removed_name:
+            save_channels(chat_id, new_channels)
+            await query.edit_message_text(
+                t("remove_deleted", lang, name=removed_name)
+            )
+        else:
+            await query.edit_message_text(t("remove_not_found", lang, name="?"))
+        return
+
+    # ── Channel-add flow ────────────────────────────────────────────────────
     if data.startswith("add_channel:__new__"):
         context.user_data["waiting_new_category"] = "add_channel"
         await query.edit_message_reply_markup(reply_markup=None)

@@ -17,7 +17,7 @@ from src.config import (
 from src.pending import reject_pending
 from src.pipeline import process_youtube_video
 from src.profile import get_language
-from src.storage import is_processed, make_content_id
+from src.storage import is_processed, make_content_id, mark_processed
 from src.strings import t
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,7 @@ async def run_channel_check(chat_id: int, app=None) -> int:
                 failed_details.append(
                     f"• {video['title']}: {result['error']}"
                 )
+                mark_processed(chat_id, content_id, status="failed")
                 logger.warning(
                     "[chat_id=%s] Failed to process %s: %s",
                     chat_id, video["title"], result["error"],

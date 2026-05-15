@@ -62,6 +62,7 @@ async def run_channel_check(chat_id: int, app=None) -> int:
     total_processed = 0
     total_rejected = 0
     total_failed = 0
+    failed_details: list[str] = []
     channels_checked = sum(1 for ch in channels if ch.get("enabled", True))
 
     async def _fetch_one(channel):
@@ -119,6 +120,9 @@ async def run_channel_check(chat_id: int, app=None) -> int:
                         )
             elif result and "error" in result:
                 total_failed += 1
+                failed_details.append(
+                    f"• {video['title']}: {result['error']}"
+                )
                 logger.warning(
                     "[chat_id=%s] Failed to process %s: %s",
                     chat_id, video["title"], result["error"],
@@ -138,6 +142,7 @@ async def run_channel_check(chat_id: int, app=None) -> int:
         total_processed=total_processed,
         total_rejected=total_rejected,
         total_failed=total_failed,
+        failed_details=failed_details,
     )
 
     return total_processed
@@ -151,6 +156,7 @@ async def _send_round_digest(
     total_processed: int,
     total_rejected: int,
     total_failed: int,
+    failed_details: list[str] | None = None,
 ) -> None:
     """Post-run summary for ``chat_id``. Sent only on non-zero activity.
 
@@ -170,6 +176,8 @@ async def _send_round_digest(
         failed=total_failed,
         interval=CHECK_INTERVAL_MINUTES,
     )
+    if failed_details:
+        text += "\n\n⚠️ " + "\n".join(failed_details)
     try:
         await app.bot.send_message(chat_id=chat_id, text=text)
     except Exception as exc:

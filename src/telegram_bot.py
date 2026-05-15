@@ -162,9 +162,21 @@ def _pending_keyboard(chat_id: int, pending_id: str) -> InlineKeyboardMarkup:
     ])
 
 
+def _all_categories(chat_id: int) -> list[str]:
+    """Merge categories.yml with categories discovered in the knowledge base.
+
+    Returns a deduplicated sorted list so the keyboard always shows
+    every category the user has ever used, not just the ones from
+    onboarding or explicit creation.
+    """
+    from_yml = set(load_categories(chat_id).keys())
+    from_kb = set((get_stats(chat_id).get("by_category") or {}).keys())
+    return sorted(from_yml | from_kb)
+
+
 def _pending_category_keyboard(chat_id: int, pending_id: str) -> InlineKeyboardMarkup:
     lang = get_language(chat_id)
-    categories = load_categories(chat_id)
+    categories = _all_categories(chat_id)
     buttons: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for slug in categories:
@@ -1249,7 +1261,7 @@ async def _handle_new_category_input(update: Update, context: ContextTypes.DEFAU
 
 def _category_keyboard(chat_id: int, prefix: str) -> InlineKeyboardMarkup:
     lang = get_language(chat_id)
-    categories = load_categories(chat_id)
+    categories = _all_categories(chat_id)
     buttons = []
     row: list[InlineKeyboardButton] = []
     for slug in categories:

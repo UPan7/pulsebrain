@@ -710,7 +710,8 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     lines = [t("search_found_header", lang, count=len(results), query=query)]
-    for i, r in enumerate(results[:5], 1):
+    top = results[:5]
+    for i, r in enumerate(top, 1):
         type_icon = "📺" if r.get("type") == "youtube_video" else "📰"
         url_line = f"   🔗 {r['source_url']}" if r.get("source_url") else ""
         lines.append(
@@ -723,9 +724,18 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             lines.append(f"   {r['summary_preview'][:100]}")
         lines.append("")
 
-    lines.append(t("recent_get_hint", lang))
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    for i, r in enumerate(top, 1):
+        title = r.get("title", "?") or "?"
+        label = f"{i}. {title[:50]}" + ("…" if len(title) > 50 else "")
+        keyboard_rows.append(
+            [InlineKeyboardButton(label, callback_data=f"getent:{r.get('id', '?')}")]
+        )
 
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(keyboard_rows),
+    )
 
 
 @authorized

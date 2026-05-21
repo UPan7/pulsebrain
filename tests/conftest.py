@@ -63,6 +63,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     users = data / "users"
     users.mkdir()
     migration_marker = data / ".migrated_v1"
+    migration_billing_marker = data / ".migrated_billing_v1"
     # Legacy paths (root of BASE_DIR / DATA_DIR) — tests that still
     # reference them directly can use these tmp copies.
     legacy_processed = data / "processed.json"
@@ -72,10 +73,12 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     legacy_categories = data / "categories.yml"
     legacy_channels = tmp_path / "channels.yml"
 
+    import src.billing
     import src.config
     import src.migration
     import src.pending
     import src.profile
+    import src.registry
     import src.storage
 
     monkeypatch.setattr(src.config, "BASE_DIR", tmp_path)
@@ -83,6 +86,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(src.config, "DATA_DIR", data)
     monkeypatch.setattr(src.config, "USERS_DIR", users)
     monkeypatch.setattr(src.config, "MIGRATION_MARKER_FILE", migration_marker)
+    monkeypatch.setattr(src.config, "MIGRATION_BILLING_MARKER_FILE", migration_billing_marker)
     monkeypatch.setattr(src.config, "LEGACY_PROCESSED_FILE", legacy_processed)
     monkeypatch.setattr(src.config, "LEGACY_PENDING_FILE", legacy_pending)
     monkeypatch.setattr(src.config, "LEGACY_REJECTED_LOG_FILE", legacy_rejected)
@@ -99,6 +103,7 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # so patching on src.config alone isn't enough — rebind the mirrors.
     monkeypatch.setattr(src.migration, "DATA_DIR", data)
     monkeypatch.setattr(src.migration, "MIGRATION_MARKER_FILE", migration_marker)
+    monkeypatch.setattr(src.migration, "MIGRATION_BILLING_MARKER_FILE", migration_billing_marker)
     monkeypatch.setattr(src.migration, "LEGACY_PROCESSED_FILE", legacy_processed)
     monkeypatch.setattr(src.migration, "LEGACY_PENDING_FILE", legacy_pending)
     monkeypatch.setattr(src.migration, "LEGACY_REJECTED_LOG_FILE", legacy_rejected)
@@ -116,6 +121,13 @@ def tmp_knowledge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(src.profile, "_profile_caches", {})
     monkeypatch.setattr(src.profile, "_profile_locks", {})
     monkeypatch.setattr(src.config, "_categories_locks", {})
+
+    # Billing + registry caches — partitioned per chat_id, reset per test.
+    monkeypatch.setattr(src.registry, "_registry_cache", None)
+    monkeypatch.setattr(src.billing, "_subscription_caches", {})
+    monkeypatch.setattr(src.billing, "_subscription_locks", {})
+    monkeypatch.setattr(src.billing, "_usage_caches", {})
+    monkeypatch.setattr(src.billing, "_usage_locks", {})
 
     return tmp_path
 
@@ -143,6 +155,29 @@ def _reset_openai_client_caches(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(src.categorize, "_client_cache", None, raising=False)
     monkeypatch.setattr(src.summarize, "_client_cache", None, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _permissive_gates(monkeypatch: pytest.MonkeyPatch):
+    """Default the billing/registry gates to permissive for non-billing tests.
+
+    Patches only the *consumer-side* copies (pipeline / scheduler /
+    telegram_bot). The source functions in src.billing and src.registry
+    stay real, so the dedicated billing/registry/payment tests still
+    exercise them. A test that wants the real gate re-patches in its body.
+    """
+    import src.pipeline
+    import src.scheduler
+    import src.telegram_bot
+
+    monkeypatch.setattr(src.pipeline, "quota_check", lambda chat_id: (True, ""))
+    monkeypatch.setattr(src.pipeline, "record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(src.scheduler, "quota_check", lambda chat_id: (True, ""))
+    monkeypatch.setattr(src.scheduler, "is_active", lambda chat_id: True)
+    monkeypatch.setattr(src.telegram_bot, "is_active", lambda chat_id: True)
+    monkeypatch.setattr(src.telegram_bot, "is_registered", lambda chat_id: True)
+    monkeypatch.setattr(src.telegram_bot, "is_blocked", lambda chat_id: False)
+    monkeypatch.setattr(src.telegram_bot, "channel_quota_check", lambda chat_id, n: (True, ""))
 
 
 # ---------------------------------------------------------------------------
@@ -210,16 +245,25 @@ def mock_telegram_context():
 
 
 @pytest.fixture()
-def allowlist_env(monkeypatch: pytest.MonkeyPatch):
-    """Set TELEGRAM_CHAT_IDS to [CHAT_ID, OTHER_CHAT_ID] for handler tests."""
+def allowlist_env(monkeypatch: pytest.MonkeyPatch, tmp_knowledge_dir):
+    """Register CHAT_ID + OTHER_CHAT_ID with active (unlimited) subscriptions.
+
+    Replaces the legacy static-allowlist fixture — handler and scheduler
+    tests need both users present in the dynamic registry with a usable
+    plan. Uses the grandfathered 'lifetime' plan so quota never interferes
+    with tests that aren't specifically about billing.
+    """
+    import src.billing
     import src.config
-    import src.telegram_bot
-    import src.scheduler
+    import src.registry
 
     monkeypatch.setattr(src.config, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
     monkeypatch.setattr(src.config, "ADMIN_CHAT_ID", CHAT_ID)
-    monkeypatch.setattr(src.telegram_bot, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
-    monkeypatch.setattr(src.scheduler, "TELEGRAM_CHAT_IDS", [CHAT_ID, OTHER_CHAT_ID])
+    src.registry.init_registry()
+    for cid in (CHAT_ID, OTHER_CHAT_ID):
+        src.config.ensure_user_dirs(cid)
+        src.registry.register_user(cid, role="user")
+        src.billing.grandfather(cid)
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,8 @@ KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 DATA_DIR = BASE_DIR / "data"
 USERS_DIR = DATA_DIR / "users"
 MIGRATION_MARKER_FILE = DATA_DIR / ".migrated_v1"
+# Marker for the one-shot billing migration (grandfather env-allowlisted users).
+MIGRATION_BILLING_MARKER_FILE = DATA_DIR / ".migrated_billing_v1"
 
 # Legacy single-user paths — kept so the one-shot migrator can find them.
 # All runtime code must use the per-user helpers (user_*_file / user_*_dir).
@@ -140,6 +142,19 @@ def user_pending_file(chat_id: int) -> Path:
 
 def user_rejected_log_file(chat_id: int) -> Path:
     return user_dir(chat_id) / "rejected_log.jsonl"
+
+
+def user_subscription_file(chat_id: int) -> Path:
+    return user_dir(chat_id) / "subscription.yaml"
+
+
+def user_usage_file(chat_id: int) -> Path:
+    return user_dir(chat_id) / "usage.json"
+
+
+def registry_file() -> Path:
+    """Shared dynamic user registry (replaces the static env allowlist)."""
+    return USERS_DIR / "registry.json"
 
 
 def user_knowledge_dir(chat_id: int) -> Path:

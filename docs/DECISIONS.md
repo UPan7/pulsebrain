@@ -173,6 +173,57 @@ Scheduler has an additional auto-reject path: entries below `min_relevance` neve
 
 ---
 
+## ADR-007: Dynamic user registry replaces the static allowlist (2026-05-21)
+
+**Status:** Accepted. Amends ADR-003.
+
+**Context:** The bot's conversion into a sellable hosted SaaS requires strangers to sign up themselves. The static `TELEGRAM_CHAT_IDS` env allowlist made every new user an env edit + container restart — unworkable for self-serve.
+
+**Decision:**
+- A dynamic registry at `data/users/registry.json` (`{users: {chat_id: {role, registered_at, label, blocked}}}`) is the single source of truth for who may use the bot and which users the scheduler iterates. See [src/registry.py](../src/registry.py).
+- `TELEGRAM_CHAT_IDS` is retained but demoted to an **admin seed** — at startup `seed_admins()` registers those ids with `role: admin`.
+- `/start` self-registers any non-blocked chat (`register_user` + per-user dir init + trial).
+- `_authorized()` now only drops `blocked` chats — the kill-switch against abuse, replacing "remove from allowlist".
+- Existing pre-SaaS allowlisted users are grandfathered by a marker-guarded migration (`.migrated_billing_v1`) — registered as admins with an unlimited `lifetime` plan so nothing breaks.
+
+**Consequences:**
+- (+) Strangers sign up with no operator action; the scheduler picks up new users on its next cycle.
+- (+) `registry.json` stays in the no-database model (ADR-001) — one small file, written only on registration.
+- (−) `registry.json` is the one shared (non-per-user) state file. Bounded and low-write today; at thousands of users it would become a write-contention point and warrant a real DB (revisit then).
+
+**Alternatives considered:**
+- **Keep editing the env allowlist** — incompatible with self-serve signup.
+- **A users table in a database** — conflicts with ADR-001; unjustified at current scale.
+
+---
+
+## ADR-008: Subscription billing in JSON/YAML, paid via Telegram Stars (2026-05-21)
+
+**Status:** Accepted
+
+**Context:** The hosted SaaS is managed-cost — PulseBrain pays the LLM + proxy bill (~$2–3.5/user/month). Without metering and quotas a single user can run costs unbounded. Payment must not require a website.
+
+**Decision:**
+- Plans live in `plans.yml` (trial / basic / pro / lifetime) — caps on tracked channels and items processed per monthly period.
+- Per-user billing state stays in the no-database model: `subscription.yaml` + `usage.json` under `data/users/{chat_id}/`, atomic writes (ADR-001 pattern). See [src/billing.py](../src/billing.py).
+- The pipeline ([src/pipeline.py](../src/pipeline.py)) — the single funnel for `/add` and the scheduler — gates every item on `quota_check()` before any extraction/LLM call, and records usage only on a successful stage.
+- Quota period rollover is **lazy** (reset on read when the stored `YYYY-MM` is stale) — no cron job, no clock-drift risk.
+- Payment is **Telegram Stars** (currency `XTR`) via `create_invoice_link(subscription_period=…)` — recurring in-bot subscriptions, no Stripe, no website.
+
+**Consequences:**
+- (+) No new infrastructure — billing is files + the existing atomic-write pattern.
+- (+) Costs are bounded per user; the pipeline gate guarantees a quota-blocked request incurs zero LLM/proxy spend.
+- (+) Expired users keep read-only access to their knowledge base — no data is lost or hidden.
+- (−) Telegram Stars recurring subscriptions only support a fixed **30-day** period — native annual recurring plans are not possible.
+- (−) Renewal `SuccessfulPayment` updates depend on polling being up; an update missed during downtime (`drop_pending_updates=True`) could briefly flip a paying user to read-only until the next renewal. Flagged for a future hardening pass.
+
+**Alternatives considered:**
+- **Stripe + a web checkout** — standard, supports annual billing, but needs a website and a payment provider integration — out of scope for the lean first release.
+- **Metering tokens instead of items** — noisier and harder to explain than "N items/month".
+- **A cron job for quota rollover** — rejected for lazy read-time rollover; no scheduler dependency, no drift.
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

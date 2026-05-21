@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from src.billing import quota_check, record_usage
 from src.categorize import categorize_content
 from src.extractors.web import extract_web_article
 from src.extractors.youtube import get_transcript, get_video_metadata
@@ -25,13 +26,24 @@ def _process_content(
     source_type: str,
     category: str | None = None,
     upload_date: str | None = None,
+    source: str = "add",
 ) -> dict[str, Any] | None:
     """Shared pipeline for any content type, scoped to ``chat_id``.
 
     Returns dict with entry info on success, or dict with 'error' key on failure.
     Error strings are rendered in the caller's profile language via :func:`t`.
+
+    *source* is ``"add"`` (interactive /add or link drop) or ``"scheduler"``
+    (periodic check) — used for usage metering attribution.
     """
     lang = get_language(chat_id)
+
+    # ── Quota gate ──────────────────────────────────────────────────────────
+    # Single funnel for /add and the scheduler — block before any extraction
+    # or LLM call so a quota-exhausted request incurs zero cost.
+    allowed, reason = quota_check(chat_id)
+    if not allowed:
+        return {"error": t(reason, lang)}
 
     # ── Extract ─────────────────────────────────────────────────────────────
     if source_type == "youtube_video":
@@ -117,6 +129,7 @@ def _process_content(
 
     pending_id = stage_pending(chat_id, **stage_kwargs)
     mark_processed(chat_id, content_id, status="pending")
+    record_usage(chat_id, source=source)
 
     # ── Build result ────────────────────────────────────────────────────────
     result: dict[str, Any] = {
@@ -147,15 +160,20 @@ def process_youtube_video(
     url: str,
     category: str | None = None,
     upload_date: str | None = None,
+    source: str = "add",
 ) -> dict[str, Any] | None:
     """Full pipeline for a YouTube video URL, scoped to ``chat_id``."""
-    return _process_content(chat_id, url, "youtube_video", category=category, upload_date=upload_date)
+    return _process_content(
+        chat_id, url, "youtube_video",
+        category=category, upload_date=upload_date, source=source,
+    )
 
 
 def process_web_article(
     chat_id: int,
     url: str,
     category: str | None = None,
+    source: str = "add",
 ) -> dict[str, Any] | None:
     """Full pipeline for a web article URL, scoped to ``chat_id``."""
-    return _process_content(chat_id, url, "web_article", category=category)
+    return _process_content(chat_id, url, "web_article", category=category, source=source)

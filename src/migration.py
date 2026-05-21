@@ -32,6 +32,7 @@ import logging
 import shutil
 from datetime import datetime, timezone
 
+from src.billing import grandfather, subscription_file_exists
 from src.config import (
     DATA_DIR,
     KNOWLEDGE_DIR,
@@ -41,6 +42,7 @@ from src.config import (
     LEGACY_PROCESSED_FILE,
     LEGACY_PROFILE_FILE,
     LEGACY_REJECTED_LOG_FILE,
+    MIGRATION_BILLING_MARKER_FILE,
     MIGRATION_MARKER_FILE,
     ensure_user_dirs,
     user_categories_file,
@@ -51,6 +53,7 @@ from src.config import (
     user_profile_file,
     user_rejected_log_file,
 )
+from src.registry import register_user
 
 logger = logging.getLogger(__name__)
 
@@ -176,4 +179,43 @@ def migrate_legacy_to_admin(admin_chat_id: int) -> bool:
 
     _write_marker()
     logger.info("Migration: complete. Marker written to %s", MIGRATION_MARKER_FILE)
+    return True
+
+
+def _write_billing_marker() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MIGRATION_BILLING_MARKER_FILE.write_text(
+        datetime.now(timezone.utc).isoformat() + "\n",
+        encoding="utf-8",
+    )
+
+
+def grandfather_allowlisted_users(allowlisted_ids: list[int]) -> bool:
+    """One-shot: give every pre-SaaS env-allowlisted user a lifetime plan.
+
+    Before the SaaS conversion, access was the static ``TELEGRAM_CHAT_IDS``
+    allowlist. Those users (existing self-hosters, the admin) must never
+    hit a paywall — this registers each one and assigns the unlimited
+    internal ``lifetime`` plan. Marker-guarded (``.migrated_billing_v1``)
+    and idempotent: an existing subscription.yaml is never clobbered.
+
+    Returns True if the migration ran this call.
+    """
+    if MIGRATION_BILLING_MARKER_FILE.exists():
+        return False
+
+    for cid in allowlisted_ids:
+        if cid <= 0:
+            continue
+        ensure_user_dirs(cid)
+        register_user(cid, role="admin")
+        if not subscription_file_exists(cid):
+            grandfather(cid)
+            logger.info("Billing migration: grandfathered chat_id=%s", cid)
+
+    _write_billing_marker()
+    logger.info(
+        "Billing migration: complete. Marker written to %s",
+        MIGRATION_BILLING_MARKER_FILE,
+    )
     return True

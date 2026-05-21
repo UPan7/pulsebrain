@@ -9,6 +9,7 @@ services:
       - ./knowledge:/app/knowledge
       - ./data:/app/data
       - ./channels.yml:/app/channels.yml
+      - ./plans.yml:/app/plans.yml
       - ./proxy-1945686-credentials:/app/proxy-credentials:ro
     logging:
       driver: json-file

@@ -1,0 +1,54 @@
+# PulseBrain subscription plan catalog.
+#
+# Loaded by src/billing.py. Prices are in Telegram Stars (XTR).
+# Limits below are placeholders — final pricing/limits are a business call
+# and can be changed here without touching code.
+#
+# Fields per plan:
+#   name_key                 — strings.py key for the human-readable name
+#   price_xtr                — price in Telegram Stars (0 = not purchasable)
+#   period_days              — entitlement window length (0 = never expires)
+#   subscription_period_days — Telegram recurring Star subscription period;
+#                              must be 0 (one-off / non-recurring) or 30
+#                              (Telegram only supports a 30-day recurring period)
+#   max_channels             — cap on tracked YouTube channels
+#   max_items_per_period     — cap on processed items per monthly period
+#   purchasable              — true if a user can buy it via /subscribe
+
+trial:
+  name_key: plan_name_trial
+  price_xtr: 0
+  period_days: 14
+  subscription_period_days: 0
+  max_channels: 3
+  max_items_per_period: 30
+  purchasable: false
+
+basic:
+  name_key: plan_name_basic
+  price_xtr: 150
+  period_days: 30
+  subscription_period_days: 30
+  max_channels: 10
+  max_items_per_period: 150
+  purchasable: true
+
+pro:
+  name_key: plan_name_pro
+  price_xtr: 400
+  period_days: 30
+  subscription_period_days: 30
+  max_channels: 40
+  max_items_per_period: 600
+  purchasable: true
+
+# Internal-only plan assigned by migration (grandfathered self-hosters) and
+# admins. Never purchasable; never expires; effectively unlimited.
+lifetime:
+  name_key: plan_name_lifetime
+  price_xtr: 0
+  period_days: 0
+  subscription_period_days: 0
+  max_channels: 100000
+  max_items_per_period: 100000
+  purchasable: false

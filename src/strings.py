@@ -2870,6 +2870,528 @@ STRINGS: dict[str, dict[str, str]] = {
 }
 
 
+# ── Billing / subscription strings (SaaS) ───────────────────────────────────
+# Kept as a separate block and merged into STRINGS so the billing feature's
+# 10-language set lives in one cohesive place. Every key must be present for
+# all SUPPORTED_LANGS — test_strings.py enforces parity.
+_BILLING_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "plan_name_trial": "Trial",
+        "plan_name_basic": "Basic",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "Lifetime",
+        "plan_name_none": "No plan",
+        "billing_need_start": "👋 Please send /start first to set up your account.",
+        "billing_expired_readonly": (
+            "⏳ Your subscription is inactive.\n\n"
+            "Your knowledge base stays readable — /search, /recent, /get and "
+            "/categories still work. Adding new content and channel checks "
+            "need an active plan.\n\n"
+            "Tap below or use /subscribe to continue."
+        ),
+        "billing_plans_intro": (
+            "⭐ Choose a plan. Payment is handled securely by Telegram Stars "
+            "— tap a plan to pay:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / month",
+        "billing_no_plans": "No subscription plans are available right now.",
+        "billing_invoice_failed": "⚠️ Couldn't create the payment link. Please try again in a moment.",
+        "billing_invoice_desc": "{plan} plan for PulseBrain — monitored channels, summaries and Q&A.",
+        "billing_status": (
+            "💳 Subscription\n\n"
+            "Plan: {plan}\n"
+            "Status: {status}\n"
+            "Renews / expires: {expires}\n\n"
+            "This month: {used} / {limit} items processed\n"
+            "Channel limit: {channels}\n\n"
+            "Use /subscribe to change plan."
+        ),
+        "billing_status_active": "active",
+        "billing_status_expired": "expired",
+        "billing_status_none": "no subscription",
+        "billing_status_line": "💳 Plan: {plan} · {used}/{limit} items this month",
+        "billing_subscribe_button": "⭐ Subscribe / upgrade",
+        "billing_precheckout_error": "This payment can't be processed. Please start again with /subscribe.",
+        "billing_payment_success": "✅ Payment received — your {plan} plan is now active. Thank you!",
+        "billing_expires_never": "never",
+        "billing_trial_welcome": "🎁 Your {days}-day free trial is active. Check it anytime with /billing.",
+        "quota_expired": "⏳ Your subscription is inactive. Use /subscribe to keep adding content.",
+        "quota_items_exceeded": (
+            "📊 You've reached your monthly processing limit. It resets at "
+            "the start of next month — or use /subscribe to upgrade."
+        ),
+        "quota_channels_exceeded": (
+            "📡 You've reached your plan's channel limit. Use /subscribe to "
+            "upgrade for more channels."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Monthly processing limit reached — I'll pause new channel "
+            "checks until next month. Use /subscribe to upgrade."
+        ),
+    },
+    "ru": {
+        "plan_name_trial": "Пробный",
+        "plan_name_basic": "Базовый",
+        "plan_name_pro": "Про",
+        "plan_name_lifetime": "Бессрочный",
+        "plan_name_none": "Без тарифа",
+        "billing_need_start": "👋 Сначала отправь /start, чтобы создать аккаунт.",
+        "billing_expired_readonly": (
+            "⏳ Твоя подписка неактивна.\n\n"
+            "База знаний остаётся доступной для чтения — /search, /recent, "
+            "/get и /categories работают. Для добавления нового контента и "
+            "проверки каналов нужен активный тариф.\n\n"
+            "Нажми кнопку ниже или используй /subscribe."
+        ),
+        "billing_plans_intro": (
+            "⭐ Выбери тариф. Оплата проходит безопасно через Telegram Stars "
+            "— нажми на тариф, чтобы оплатить:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / месяц",
+        "billing_no_plans": "Сейчас нет доступных тарифов.",
+        "billing_invoice_failed": "⚠️ Не удалось создать ссылку на оплату. Попробуй ещё раз чуть позже.",
+        "billing_invoice_desc": "Тариф {plan} для PulseBrain — мониторинг каналов, саммари и ответы на вопросы.",
+        "billing_status": (
+            "💳 Подписка\n\n"
+            "Тариф: {plan}\n"
+            "Статус: {status}\n"
+            "Продление / окончание: {expires}\n\n"
+            "В этом месяце: {used} / {limit} материалов\n"
+            "Лимит каналов: {channels}\n\n"
+            "Используй /subscribe, чтобы сменить тариф."
+        ),
+        "billing_status_active": "активна",
+        "billing_status_expired": "истекла",
+        "billing_status_none": "нет подписки",
+        "billing_status_line": "💳 Тариф: {plan} · {used}/{limit} материалов в этом месяце",
+        "billing_subscribe_button": "⭐ Подписаться / улучшить",
+        "billing_precheckout_error": "Этот платёж нельзя обработать. Начни заново через /subscribe.",
+        "billing_payment_success": "✅ Оплата получена — тариф {plan} активирован. Спасибо!",
+        "billing_expires_never": "никогда",
+        "billing_trial_welcome": "🎁 Активирован бесплатный пробный период на {days} дн. Проверить можно через /billing.",
+        "quota_expired": "⏳ Твоя подписка неактивна. Используй /subscribe, чтобы продолжить добавлять контент.",
+        "quota_items_exceeded": (
+            "📊 Достигнут месячный лимит обработки. Он обнулится в начале "
+            "следующего месяца — или используй /subscribe для перехода на больший тариф."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Достигнут лимит каналов твоего тарифа. Используй /subscribe, "
+            "чтобы добавить больше каналов."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Достигнут месячный лимит обработки — приостанавливаю проверку "
+            "каналов до следующего месяца. Используй /subscribe для апгрейда."
+        ),
+    },
+    "de": {
+        "plan_name_trial": "Test",
+        "plan_name_basic": "Basic",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "Lebenslang",
+        "plan_name_none": "Kein Tarif",
+        "billing_need_start": "👋 Bitte sende zuerst /start, um dein Konto einzurichten.",
+        "billing_expired_readonly": (
+            "⏳ Dein Abo ist inaktiv.\n\n"
+            "Deine Wissensdatenbank bleibt lesbar — /search, /recent, /get "
+            "und /categories funktionieren weiter. Neue Inhalte und "
+            "Kanal-Checks brauchen einen aktiven Tarif.\n\n"
+            "Tippe unten oder nutze /subscribe, um fortzufahren."
+        ),
+        "billing_plans_intro": (
+            "⭐ Wähle einen Tarif. Die Zahlung läuft sicher über Telegram "
+            "Stars — tippe auf einen Tarif zum Bezahlen:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / Monat",
+        "billing_no_plans": "Derzeit sind keine Tarife verfügbar.",
+        "billing_invoice_failed": "⚠️ Zahlungslink konnte nicht erstellt werden. Bitte versuche es gleich erneut.",
+        "billing_invoice_desc": "{plan}-Tarif für PulseBrain — überwachte Kanäle, Zusammenfassungen und Fragen.",
+        "billing_status": (
+            "💳 Abonnement\n\n"
+            "Tarif: {plan}\n"
+            "Status: {status}\n"
+            "Verlängerung / Ablauf: {expires}\n\n"
+            "Diesen Monat: {used} / {limit} Inhalte\n"
+            "Kanal-Limit: {channels}\n\n"
+            "Nutze /subscribe, um den Tarif zu ändern."
+        ),
+        "billing_status_active": "aktiv",
+        "billing_status_expired": "abgelaufen",
+        "billing_status_none": "kein Abo",
+        "billing_status_line": "💳 Tarif: {plan} · {used}/{limit} Inhalte diesen Monat",
+        "billing_subscribe_button": "⭐ Abonnieren / upgraden",
+        "billing_precheckout_error": "Diese Zahlung kann nicht verarbeitet werden. Bitte starte neu mit /subscribe.",
+        "billing_payment_success": "✅ Zahlung erhalten — dein {plan}-Tarif ist jetzt aktiv. Danke!",
+        "billing_expires_never": "nie",
+        "billing_trial_welcome": "🎁 Deine {days}-tägige Gratis-Testphase ist aktiv. Prüfe sie jederzeit mit /billing.",
+        "quota_expired": "⏳ Dein Abo ist inaktiv. Nutze /subscribe, um weiter Inhalte hinzuzufügen.",
+        "quota_items_exceeded": (
+            "📊 Du hast dein monatliches Verarbeitungslimit erreicht. Es wird "
+            "zu Beginn des nächsten Monats zurückgesetzt — oder nutze /subscribe für ein Upgrade."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Du hast das Kanal-Limit deines Tarifs erreicht. Nutze "
+            "/subscribe für mehr Kanäle."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Monatliches Verarbeitungslimit erreicht — ich pausiere neue "
+            "Kanal-Checks bis nächsten Monat. Nutze /subscribe für ein Upgrade."
+        ),
+    },
+    "fr": {
+        "plan_name_trial": "Essai",
+        "plan_name_basic": "Basique",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "À vie",
+        "plan_name_none": "Aucun forfait",
+        "billing_need_start": "👋 Envoie d'abord /start pour créer ton compte.",
+        "billing_expired_readonly": (
+            "⏳ Ton abonnement est inactif.\n\n"
+            "Ta base de connaissances reste consultable — /search, /recent, "
+            "/get et /categories fonctionnent toujours. Ajouter du contenu et "
+            "les vérifications de chaînes nécessitent un forfait actif.\n\n"
+            "Appuie ci-dessous ou utilise /subscribe pour continuer."
+        ),
+        "billing_plans_intro": (
+            "⭐ Choisis un forfait. Le paiement est géré en toute sécurité "
+            "par Telegram Stars — appuie sur un forfait pour payer :"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / mois",
+        "billing_no_plans": "Aucun forfait n'est disponible pour le moment.",
+        "billing_invoice_failed": "⚠️ Impossible de créer le lien de paiement. Réessaie dans un instant.",
+        "billing_invoice_desc": "Forfait {plan} pour PulseBrain — chaînes surveillées, résumés et questions.",
+        "billing_status": (
+            "💳 Abonnement\n\n"
+            "Forfait : {plan}\n"
+            "Statut : {status}\n"
+            "Renouvellement / expiration : {expires}\n\n"
+            "Ce mois-ci : {used} / {limit} contenus\n"
+            "Limite de chaînes : {channels}\n\n"
+            "Utilise /subscribe pour changer de forfait."
+        ),
+        "billing_status_active": "actif",
+        "billing_status_expired": "expiré",
+        "billing_status_none": "aucun abonnement",
+        "billing_status_line": "💳 Forfait : {plan} · {used}/{limit} contenus ce mois-ci",
+        "billing_subscribe_button": "⭐ S'abonner / améliorer",
+        "billing_precheckout_error": "Ce paiement ne peut pas être traité. Recommence avec /subscribe.",
+        "billing_payment_success": "✅ Paiement reçu — ton forfait {plan} est maintenant actif. Merci !",
+        "billing_expires_never": "jamais",
+        "billing_trial_welcome": "🎁 Ton essai gratuit de {days} jours est actif. Vérifie-le à tout moment avec /billing.",
+        "quota_expired": "⏳ Ton abonnement est inactif. Utilise /subscribe pour continuer à ajouter du contenu.",
+        "quota_items_exceeded": (
+            "📊 Tu as atteint ta limite mensuelle de traitement. Elle se "
+            "réinitialise au début du mois prochain — ou utilise /subscribe pour passer à un forfait supérieur."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Tu as atteint la limite de chaînes de ton forfait. Utilise "
+            "/subscribe pour en ajouter davantage."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Limite mensuelle de traitement atteinte — je mets en pause "
+            "les vérifications de chaînes jusqu'au mois prochain. Utilise /subscribe pour améliorer."
+        ),
+    },
+    "es": {
+        "plan_name_trial": "Prueba",
+        "plan_name_basic": "Básico",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "De por vida",
+        "plan_name_none": "Sin plan",
+        "billing_need_start": "👋 Envía primero /start para configurar tu cuenta.",
+        "billing_expired_readonly": (
+            "⏳ Tu suscripción está inactiva.\n\n"
+            "Tu base de conocimiento sigue siendo legible — /search, /recent, "
+            "/get y /categories funcionan. Añadir contenido nuevo y las "
+            "comprobaciones de canales requieren un plan activo.\n\n"
+            "Pulsa abajo o usa /subscribe para continuar."
+        ),
+        "billing_plans_intro": (
+            "⭐ Elige un plan. El pago se gestiona de forma segura con "
+            "Telegram Stars — pulsa un plan para pagar:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / mes",
+        "billing_no_plans": "No hay planes de suscripción disponibles ahora mismo.",
+        "billing_invoice_failed": "⚠️ No se pudo crear el enlace de pago. Inténtalo de nuevo en un momento.",
+        "billing_invoice_desc": "Plan {plan} para PulseBrain — canales monitorizados, resúmenes y preguntas.",
+        "billing_status": (
+            "💳 Suscripción\n\n"
+            "Plan: {plan}\n"
+            "Estado: {status}\n"
+            "Renovación / vencimiento: {expires}\n\n"
+            "Este mes: {used} / {limit} elementos\n"
+            "Límite de canales: {channels}\n\n"
+            "Usa /subscribe para cambiar de plan."
+        ),
+        "billing_status_active": "activa",
+        "billing_status_expired": "vencida",
+        "billing_status_none": "sin suscripción",
+        "billing_status_line": "💳 Plan: {plan} · {used}/{limit} elementos este mes",
+        "billing_subscribe_button": "⭐ Suscribirse / mejorar",
+        "billing_precheckout_error": "Este pago no se puede procesar. Empieza de nuevo con /subscribe.",
+        "billing_payment_success": "✅ Pago recibido — tu plan {plan} ya está activo. ¡Gracias!",
+        "billing_expires_never": "nunca",
+        "billing_trial_welcome": "🎁 Tu prueba gratuita de {days} días está activa. Revísala cuando quieras con /billing.",
+        "quota_expired": "⏳ Tu suscripción está inactiva. Usa /subscribe para seguir añadiendo contenido.",
+        "quota_items_exceeded": (
+            "📊 Has alcanzado tu límite mensual de procesamiento. Se "
+            "reinicia al comienzo del próximo mes — o usa /subscribe para mejorar tu plan."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Has alcanzado el límite de canales de tu plan. Usa /subscribe "
+            "para añadir más."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Límite mensual de procesamiento alcanzado — pausaré las "
+            "nuevas comprobaciones de canales hasta el próximo mes. Usa /subscribe para mejorar."
+        ),
+    },
+    "it": {
+        "plan_name_trial": "Prova",
+        "plan_name_basic": "Base",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "A vita",
+        "plan_name_none": "Nessun piano",
+        "billing_need_start": "👋 Invia prima /start per configurare il tuo account.",
+        "billing_expired_readonly": (
+            "⏳ Il tuo abbonamento è inattivo.\n\n"
+            "La tua base di conoscenza resta consultabile — /search, /recent, "
+            "/get e /categories funzionano. Aggiungere nuovi contenuti e i "
+            "controlli dei canali richiedono un piano attivo.\n\n"
+            "Tocca qui sotto o usa /subscribe per continuare."
+        ),
+        "billing_plans_intro": (
+            "⭐ Scegli un piano. Il pagamento è gestito in sicurezza da "
+            "Telegram Stars — tocca un piano per pagare:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / mese",
+        "billing_no_plans": "Al momento non ci sono piani disponibili.",
+        "billing_invoice_failed": "⚠️ Impossibile creare il link di pagamento. Riprova tra poco.",
+        "billing_invoice_desc": "Piano {plan} per PulseBrain — canali monitorati, riassunti e domande.",
+        "billing_status": (
+            "💳 Abbonamento\n\n"
+            "Piano: {plan}\n"
+            "Stato: {status}\n"
+            "Rinnovo / scadenza: {expires}\n\n"
+            "Questo mese: {used} / {limit} elementi\n"
+            "Limite canali: {channels}\n\n"
+            "Usa /subscribe per cambiare piano."
+        ),
+        "billing_status_active": "attivo",
+        "billing_status_expired": "scaduto",
+        "billing_status_none": "nessun abbonamento",
+        "billing_status_line": "💳 Piano: {plan} · {used}/{limit} elementi questo mese",
+        "billing_subscribe_button": "⭐ Abbonati / aggiorna",
+        "billing_precheckout_error": "Questo pagamento non può essere elaborato. Ricomincia con /subscribe.",
+        "billing_payment_success": "✅ Pagamento ricevuto — il tuo piano {plan} è ora attivo. Grazie!",
+        "billing_expires_never": "mai",
+        "billing_trial_welcome": "🎁 La tua prova gratuita di {days} giorni è attiva. Controllala quando vuoi con /billing.",
+        "quota_expired": "⏳ Il tuo abbonamento è inattivo. Usa /subscribe per continuare ad aggiungere contenuti.",
+        "quota_items_exceeded": (
+            "📊 Hai raggiunto il limite mensile di elaborazione. Si azzera "
+            "all'inizio del mese prossimo — oppure usa /subscribe per fare l'upgrade."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Hai raggiunto il limite di canali del tuo piano. Usa "
+            "/subscribe per aggiungerne altri."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Limite mensile di elaborazione raggiunto — metto in pausa i "
+            "controlli dei canali fino al mese prossimo. Usa /subscribe per l'upgrade."
+        ),
+    },
+    "pt": {
+        "plan_name_trial": "Teste",
+        "plan_name_basic": "Básico",
+        "plan_name_pro": "Pro",
+        "plan_name_lifetime": "Vitalício",
+        "plan_name_none": "Sem plano",
+        "billing_need_start": "👋 Envie primeiro /start para configurar a sua conta.",
+        "billing_expired_readonly": (
+            "⏳ A sua assinatura está inativa.\n\n"
+            "A sua base de conhecimento continua legível — /search, /recent, "
+            "/get e /categories funcionam. Adicionar novo conteúdo e as "
+            "verificações de canais exigem um plano ativo.\n\n"
+            "Toque abaixo ou use /subscribe para continuar."
+        ),
+        "billing_plans_intro": (
+            "⭐ Escolha um plano. O pagamento é processado com segurança pelo "
+            "Telegram Stars — toque num plano para pagar:"
+        ),
+        "billing_plan_button": "{name} — {price} ⭐ / mês",
+        "billing_no_plans": "Não há planos de assinatura disponíveis no momento.",
+        "billing_invoice_failed": "⚠️ Não foi possível criar o link de pagamento. Tente novamente em instantes.",
+        "billing_invoice_desc": "Plano {plan} para o PulseBrain — canais monitorados, resumos e perguntas.",
+        "billing_status": (
+            "💳 Assinatura\n\n"
+            "Plano: {plan}\n"
+            "Estado: {status}\n"
+            "Renovação / expiração: {expires}\n\n"
+            "Este mês: {used} / {limit} itens\n"
+            "Limite de canais: {channels}\n\n"
+            "Use /subscribe para mudar de plano."
+        ),
+        "billing_status_active": "ativa",
+        "billing_status_expired": "expirada",
+        "billing_status_none": "sem assinatura",
+        "billing_status_line": "💳 Plano: {plan} · {used}/{limit} itens este mês",
+        "billing_subscribe_button": "⭐ Assinar / fazer upgrade",
+        "billing_precheckout_error": "Este pagamento não pode ser processado. Comece novamente com /subscribe.",
+        "billing_payment_success": "✅ Pagamento recebido — o seu plano {plan} está ativo. Obrigado!",
+        "billing_expires_never": "nunca",
+        "billing_trial_welcome": "🎁 O seu teste gratuito de {days} dias está ativo. Verifique quando quiser com /billing.",
+        "quota_expired": "⏳ A sua assinatura está inativa. Use /subscribe para continuar a adicionar conteúdo.",
+        "quota_items_exceeded": (
+            "📊 Atingiu o seu limite mensal de processamento. Ele é "
+            "reiniciado no início do próximo mês — ou use /subscribe para fazer upgrade."
+        ),
+        "quota_channels_exceeded": (
+            "📡 Atingiu o limite de canais do seu plano. Use /subscribe para "
+            "adicionar mais."
+        ),
+        "quota_scheduler_reached": (
+            "📊 Limite mensal de processamento atingido — vou pausar as "
+            "novas verificações de canais até o próximo mês. Use /subscribe para fazer upgrade."
+        ),
+    },
+    "zh": {
+        "plan_name_trial": "试用",
+        "plan_name_basic": "基础版",
+        "plan_name_pro": "专业版",
+        "plan_name_lifetime": "终身版",
+        "plan_name_none": "无套餐",
+        "billing_need_start": "👋 请先发送 /start 来创建你的账户。",
+        "billing_expired_readonly": (
+            "⏳ 你的订阅已失效。\n\n"
+            "你的知识库仍可阅读 —— /search、/recent、/get 和 /categories 仍然可用。"
+            "添加新内容和频道检查需要有效的套餐。\n\n"
+            "点击下方按钮或使用 /subscribe 继续。"
+        ),
+        "billing_plans_intro": "⭐ 选择一个套餐。付款由 Telegram Stars 安全处理 —— 点击套餐即可付款：",
+        "billing_plan_button": "{name} —— {price} ⭐ / 月",
+        "billing_no_plans": "目前没有可用的订阅套餐。",
+        "billing_invoice_failed": "⚠️ 无法创建付款链接。请稍后重试。",
+        "billing_invoice_desc": "PulseBrain 的 {plan} 套餐 —— 频道监控、摘要与问答。",
+        "billing_status": (
+            "💳 订阅\n\n"
+            "套餐：{plan}\n"
+            "状态：{status}\n"
+            "续订 / 到期：{expires}\n\n"
+            "本月：已处理 {used} / {limit} 项\n"
+            "频道上限：{channels}\n\n"
+            "使用 /subscribe 更改套餐。"
+        ),
+        "billing_status_active": "有效",
+        "billing_status_expired": "已过期",
+        "billing_status_none": "无订阅",
+        "billing_status_line": "💳 套餐：{plan} · 本月 {used}/{limit} 项",
+        "billing_subscribe_button": "⭐ 订阅 / 升级",
+        "billing_precheckout_error": "此付款无法处理。请使用 /subscribe 重新开始。",
+        "billing_payment_success": "✅ 已收到付款 —— 你的 {plan} 套餐已激活。谢谢！",
+        "billing_expires_never": "永不",
+        "billing_trial_welcome": "🎁 你的 {days} 天免费试用已激活。随时可用 /billing 查看。",
+        "quota_expired": "⏳ 你的订阅已失效。使用 /subscribe 以继续添加内容。",
+        "quota_items_exceeded": "📊 你已达到本月处理上限。它将在下月初重置 —— 或使用 /subscribe 升级。",
+        "quota_channels_exceeded": "📡 你已达到当前套餐的频道上限。使用 /subscribe 升级以获得更多频道。",
+        "quota_scheduler_reached": "📊 已达到本月处理上限 —— 我将暂停新的频道检查，直到下个月。使用 /subscribe 升级。",
+    },
+    "ja": {
+        "plan_name_trial": "トライアル",
+        "plan_name_basic": "ベーシック",
+        "plan_name_pro": "プロ",
+        "plan_name_lifetime": "ライフタイム",
+        "plan_name_none": "プランなし",
+        "billing_need_start": "👋 まず /start を送信してアカウントを設定してください。",
+        "billing_expired_readonly": (
+            "⏳ サブスクリプションが無効です。\n\n"
+            "ナレッジベースは引き続き閲覧できます —— /search、/recent、/get、"
+            "/categories は利用可能です。新しいコンテンツの追加とチャンネル"
+            "チェックには有効なプランが必要です。\n\n"
+            "下のボタンを押すか /subscribe で続行してください。"
+        ),
+        "billing_plans_intro": "⭐ プランを選んでください。支払いは Telegram Stars で安全に処理されます —— プランをタップして支払い：",
+        "billing_plan_button": "{name} —— {price} ⭐ / 月",
+        "billing_no_plans": "現在利用できるプランはありません。",
+        "billing_invoice_failed": "⚠️ 支払いリンクを作成できませんでした。しばらくして再試行してください。",
+        "billing_invoice_desc": "PulseBrain の {plan} プラン —— チャンネル監視、要約、Q&A。",
+        "billing_status": (
+            "💳 サブスクリプション\n\n"
+            "プラン：{plan}\n"
+            "ステータス：{status}\n"
+            "更新 / 期限：{expires}\n\n"
+            "今月：{used} / {limit} 件処理\n"
+            "チャンネル上限：{channels}\n\n"
+            "/subscribe でプランを変更できます。"
+        ),
+        "billing_status_active": "有効",
+        "billing_status_expired": "期限切れ",
+        "billing_status_none": "サブスクなし",
+        "billing_status_line": "💳 プラン：{plan} · 今月 {used}/{limit} 件",
+        "billing_subscribe_button": "⭐ 登録 / アップグレード",
+        "billing_precheckout_error": "この支払いは処理できません。/subscribe でやり直してください。",
+        "billing_payment_success": "✅ 支払いを受け取りました —— {plan} プランが有効になりました。ありがとうございます！",
+        "billing_expires_never": "なし",
+        "billing_trial_welcome": "🎁 {days} 日間の無料トライアルが有効です。いつでも /billing で確認できます。",
+        "quota_expired": "⏳ サブスクリプションが無効です。/subscribe でコンテンツの追加を続けてください。",
+        "quota_items_exceeded": "📊 今月の処理上限に達しました。翌月の初めにリセットされます —— または /subscribe でアップグレードしてください。",
+        "quota_channels_exceeded": "📡 プランのチャンネル上限に達しました。/subscribe でアップグレードしてください。",
+        "quota_scheduler_reached": "📊 今月の処理上限に達しました —— 翌月まで新しいチャンネルチェックを一時停止します。/subscribe でアップグレードしてください。",
+    },
+    "ar": {
+        "plan_name_trial": "تجريبي",
+        "plan_name_basic": "أساسي",
+        "plan_name_pro": "احترافي",
+        "plan_name_lifetime": "مدى الحياة",
+        "plan_name_none": "بدون خطة",
+        "billing_need_start": "👋 أرسل /start أولاً لإعداد حسابك.",
+        "billing_expired_readonly": (
+            "⏳ اشتراكك غير نشط.\n\n"
+            "تبقى قاعدة معرفتك قابلة للقراءة — /search و /recent و /get و "
+            "/categories لا تزال تعمل. تتطلب إضافة محتوى جديد وفحص القنوات خطة نشطة.\n\n"
+            "اضغط بالأسفل أو استخدم /subscribe للمتابعة."
+        ),
+        "billing_plans_intro": "⭐ اختر خطة. تتم معالجة الدفع بأمان عبر Telegram Stars — اضغط على خطة للدفع:",
+        "billing_plan_button": "{name} — {price} ⭐ / شهرياً",
+        "billing_no_plans": "لا توجد خطط اشتراك متاحة حالياً.",
+        "billing_invoice_failed": "⚠️ تعذّر إنشاء رابط الدفع. يرجى المحاولة مرة أخرى بعد قليل.",
+        "billing_invoice_desc": "خطة {plan} لـ PulseBrain — قنوات مراقَبة وملخّصات وأسئلة.",
+        "billing_status": (
+            "💳 الاشتراك\n\n"
+            "الخطة: {plan}\n"
+            "الحالة: {status}\n"
+            "التجديد / الانتهاء: {expires}\n\n"
+            "هذا الشهر: {used} / {limit} عنصراً\n"
+            "حد القنوات: {channels}\n\n"
+            "استخدم /subscribe لتغيير الخطة."
+        ),
+        "billing_status_active": "نشط",
+        "billing_status_expired": "منتهٍ",
+        "billing_status_none": "لا يوجد اشتراك",
+        "billing_status_line": "💳 الخطة: {plan} · {used}/{limit} عنصراً هذا الشهر",
+        "billing_subscribe_button": "⭐ اشترك / ترقية",
+        "billing_precheckout_error": "تعذّر معالجة هذه الدفعة. ابدأ من جديد عبر /subscribe.",
+        "billing_payment_success": "✅ تم استلام الدفع — خطتك {plan} نشطة الآن. شكراً لك!",
+        "billing_expires_never": "أبداً",
+        "billing_trial_welcome": "🎁 فترتك التجريبية المجانية لمدة {days} يوماً نشطة. تحقّق منها في أي وقت عبر /billing.",
+        "quota_expired": "⏳ اشتراكك غير نشط. استخدم /subscribe لمواصلة إضافة المحتوى.",
+        "quota_items_exceeded": (
+            "📊 لقد بلغت حدّك الشهري للمعالجة. يُعاد ضبطه في بداية الشهر "
+            "القادم — أو استخدم /subscribe للترقية."
+        ),
+        "quota_channels_exceeded": (
+            "📡 لقد بلغت حد القنوات في خطتك. استخدم /subscribe للترقية "
+            "والحصول على المزيد."
+        ),
+        "quota_scheduler_reached": (
+            "📊 تم بلوغ الحد الشهري للمعالجة — سأوقف فحوصات القنوات الجديدة "
+            "حتى الشهر القادم. استخدم /subscribe للترقية."
+        ),
+    },
+}
+
+for _billing_lang, _billing_entries in _BILLING_STRINGS.items():
+    STRINGS.setdefault(_billing_lang, {}).update(_billing_entries)
+
+
 def t(key: str, lang: str = _DEFAULT_LANG, **fmt: Any) -> str:
     """Lookup + format. Fallback chain: *lang* → English → key itself.
 

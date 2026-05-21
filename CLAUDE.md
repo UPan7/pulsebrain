@@ -23,7 +23,7 @@ Self-hosted Telegram bot that builds a personal, multi-tenant knowledge base by 
 2. **Multi-tenant via `chat_id` threading.** Every handler, pipeline, storage, summarize, and pending call takes `chat_id` as its first argument. No globals, no "current user". See [src/config.py:120](src/config.py#L120) for per-user path helpers.
 3. **Per-user isolation is total.** Caches, locks, files, even LLM context. Two users who encounter the same video each get their own summary with their own relevance.
 4. **All state writes are atomic.** Thread lock + `.tmp` file + `os.replace`. See [src/storage.py:61](src/storage.py#L61), [src/pending.py:63](src/pending.py#L63), [src/profile.py:99](src/profile.py#L99).
-5. **Bot only responds to `TELEGRAM_CHAT_IDS` allowlist.** The first id is the admin; they receive legacy-migration artifacts. Unauthorized messages are silently ignored.
+5. **Self-serve registration via a dynamic registry.** Any non-blocked chat can `/start` and self-register into `data/users/registry.json`; `TELEGRAM_CHAT_IDS` only seeds admin accounts. Blocked users are the kill-switch. Every user holds a subscription (trial / paid / lifetime) — cost-incurring actions are gated on it. See [src/registry.py](src/registry.py), [src/billing.py](src/billing.py).
 6. **All user-facing strings go through `src.strings.t(key, lang, **kwargs)`.** No bare literals in handlers. Adding a string means adding 10 translations. See [src/strings.py](src/strings.py).
 7. **Content IDs are canonical.** `yt:{video_id}` for YouTube, `web:{sha256(url)[:16]}` for articles. Never random UUIDs. See [src/storage.py:100](src/storage.py#L100).
 8. **Never crash on single-item failure.** Log + notify user + continue with next item. One user's scheduler error must not break the others. See [src/scheduler.py:196](src/scheduler.py#L196).
@@ -47,8 +47,10 @@ Self-hosted Telegram bot that builds a personal, multi-tenant knowledge base by 
 | Storage | [src/storage.py](src/storage.py) | Markdown writer, `_index.md` rebuild, dedup `processed.json`, search, stats, entry IDs | stable |
 | Pending | [src/pending.py](src/pending.py) | Approval queue (stage / commit / reject), rejected log, per-user locks | stable |
 | Profile | [src/profile.py](src/profile.py) | Per-user YAML; language + persona + learning targets; `build_relevance_context()` | stable |
-| Migration | [src/migration.py](src/migration.py) | One-shot legacy → admin-namespace migrator; marker-guarded idempotent | stable |
-| Telegram bot | [src/telegram_bot.py](src/telegram_bot.py) | All command handlers, inline keyboards, notification helpers | stable, large (1511 LOC) |
+| Migration | [src/migration.py](src/migration.py) | One-shot legacy → admin-namespace migrator + billing grandfathering; marker-guarded idempotent | stable |
+| Registry | [src/registry.py](src/registry.py) | Dynamic user registry — self-serve registration, admin/blocked flags; replaces the static allowlist | stable |
+| Billing | [src/billing.py](src/billing.py) | Plan catalog (`plans.yml`), per-user subscription state, usage metering, quota checks | stable |
+| Telegram bot | [src/telegram_bot.py](src/telegram_bot.py) | All command handlers, inline keyboards, Telegram Stars payment flow, notification helpers | stable, large |
 | Onboarding | [src/onboarding.py](src/onboarding.py) | Pure state machine (STEPS, draft, apply) — no Telegram imports | stable |
 | Onboarding presets | [src/onboarding_presets.py](src/onboarding_presets.py) | Starter categories + empty channel list | stable |
 | Strings | [src/strings.py](src/strings.py) | `t()` + SUPPORTED_LANGS; 10-language templates | stable, large (2727 LOC) |
@@ -85,7 +87,9 @@ Registered in [src/telegram_bot.py:1489-1505](src/telegram_bot.py#L1489).
 | `/search <query>` | Keyword search; returns entry IDs |
 | `/recent [n]` | Latest n entries (default 5) |
 | `/get [id]` | Browse by category picker or fetch a specific entry (incl. `.source.txt`) |
-| `/status` | Quick counters |
+| `/subscribe` | Show plans, pay via Telegram Stars |
+| `/billing` | Current plan, status, usage this period |
+| `/status` | Quick counters + plan/usage line |
 | `/stats` | Per-category health, top sources, weekly summary |
 | `/pending` | Staged entries with approve/reject keyboard |
 | `/rejected [n]` | Auto-rejected entries with reason |
@@ -134,6 +138,10 @@ Under `data/users/{chat_id}/`:
 | `processed.json` | `{content_id: {status: pending|ok|rejected, processed_at}}` | pipeline, pending | dedup checks |
 | `pending.json` | `{pending_id: {content_id, title, summary_bullets, …}}` | pipeline (stage), approve/reject | `/pending`, scheduler auto-reject |
 | `rejected_log.jsonl` | one JSON record per reject | pending.reject_pending | `/rejected` |
+| `subscription.yaml` | plan, status, started_at, expires_at, source, telegram_charge_id | billing (`/start`, payments, migration) | quota/entitlement checks |
+| `usage.json` | period (`YYYY-MM`), items_processed, by_source, tokens_total | billing (pipeline `record_usage`) | `quota_check`, `/billing` |
+
+Shared (not per-user): `data/users/registry.json` — `{users: {chat_id: {role, registered_at, label, blocked}}}`, written by [src/registry.py](src/registry.py).
 
 Under `knowledge/{chat_id}/`:
 

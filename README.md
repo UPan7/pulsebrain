@@ -4,7 +4,7 @@ Self-hosted Telegram bot that builds a personal knowledge base from YouTube chan
 
 <!-- TODO: add Telegram conversation screenshot -->
 
-Tech moves too fast. New tools, models, and releases drop weekly. This bot watches your favorite YouTube channels, reads the articles you'd never get to, and builds a searchable knowledge base — so you stay current without the FOMO. No SaaS, no subscriptions, Markdown files on your server.
+Tech moves too fast. New tools, models, and releases drop weekly. This bot watches your favorite YouTube channels, reads the articles you'd never get to, and builds a searchable knowledge base — so you stay current without the FOMO. Multi-tenant with self-serve signup and Telegram Stars subscriptions; the knowledge base stays plain Markdown files on your server.
 
 ## Features
 
@@ -14,8 +14,9 @@ Tech moves too fast. New tools, models, and releases drop weekly. This bot watch
 - **Approval queue** — staged entries with inline keyboard (approve / reject / re-categorize)
 - **Full-text search** — `/search` across all knowledge entries, jump to any entry with `/get`
 - **Structured Markdown output** — category/year/month folder hierarchy, lossless `.source.txt` sibling
-- **Single authorized user** — bot ignores everyone except your `TELEGRAM_CHAT_ID`
-- **No database** — Markdown files are the knowledge base
+- **Self-serve multi-tenant** — strangers `/start` to register; each user gets an isolated knowledge base
+- **Subscriptions** — trial / paid plans with per-user quotas, paid in-bot via Telegram Stars (`/subscribe`, `/billing`)
+- **No database** — Markdown files are the knowledge base; billing state is plain JSON/YAML
 
 ## Quick Start
 
@@ -60,6 +61,8 @@ Tech moves too fast. New tools, models, and releases drop weekly. This bot watch
 | `/pending` | List staged entries awaiting approval (inline keyboard) |
 | `/rejected [count]` | Show auto-rejected entries with rejection reason |
 | `/run` | Force immediate pipeline run for all enabled channels |
+| `/subscribe` | Show plans and pay via Telegram Stars |
+| `/billing` | Show current plan, status, and usage this period |
 | `/language` | Switch UI language without re-running wizard |
 | `/onboarding` | Re-run the setup wizard |
 | `/cancel` | Cancel any in-progress wizard step |

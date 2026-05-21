@@ -97,37 +97,50 @@ def test_knowledge_is_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_cha
     assert len(get_recent_entries(other_chat_id)) == 0
 
 
-def test_allowlist_rejects_unknown_chat_id(allowlist_env, mock_telegram_update):
-    """_authorized returns False for a chat_id not in TELEGRAM_CHAT_IDS."""
-    from src.telegram_bot import _authorized
+def test_blocked_chat_id_rejected(allowlist_env, mock_telegram_update, monkeypatch):
+    """_authorized drops blocked chats; everyone else (incl. unknown) passes.
 
-    allowed = mock_telegram_update(chat_id=12345)
-    denied = mock_telegram_update(chat_id=99999)
+    Self-serve SaaS: an unknown chat must reach handlers so it can /start
+    and self-register. Only the blocked kill-switch denies access.
+    """
+    import src.registry as registry
+    import src.telegram_bot as bot
+    # The permissive autouse fixture stubs is_blocked — use the real one here.
+    monkeypatch.setattr(bot, "is_blocked", registry.is_blocked)
 
-    assert _authorized(allowed) is True
-    assert _authorized(denied) is False
+    registry.register_user(99999)
+    registry.set_blocked(99999, True)
+
+    assert bot._authorized(mock_telegram_update(chat_id=12345)) is True
+    assert bot._authorized(mock_telegram_update(chat_id=55555)) is True  # unknown
+    assert bot._authorized(mock_telegram_update(chat_id=99999)) is False  # blocked
 
 
-# Every command handler registered by create_bot_application() must reject
-# unauthorized updates. A bug that forgets @authorized on a new handler
-# would break tenant isolation — this parametrized test is the safety net.
+# Every command handler registered by create_bot_application() must drop
+# updates from blocked chats. A bug that forgets @authorized on a new
+# handler would break the kill-switch — this parametrized test is the net.
 _AUTH_GUARDED_HANDLERS = [
     "cmd_start", "cmd_help", "cmd_onboarding", "cmd_language",
     "cmd_add", "cmd_remove", "cmd_list", "cmd_categories",
     "cmd_search", "cmd_recent", "cmd_get", "cmd_status",
     "cmd_stats", "cmd_run", "cmd_pending", "cmd_rejected", "cmd_cancel",
+    "cmd_subscribe", "cmd_billing",
 ]
 
 
 @pytest.mark.parametrize("handler_name", _AUTH_GUARDED_HANDLERS)
-async def test_handler_rejects_unauthorized_chat(
-    handler_name, allowlist_env, mock_telegram_update, mock_telegram_context
+async def test_handler_rejects_blocked_chat(
+    handler_name, allowlist_env, mock_telegram_update, mock_telegram_context, monkeypatch
 ):
-    """Every registered command handler must drop updates from outside the allowlist."""
+    """Every registered command handler must drop updates from blocked chats."""
+    import src.registry as registry
     import src.telegram_bot as bot
-    handler = getattr(bot, handler_name)
+    monkeypatch.setattr(bot, "is_blocked", registry.is_blocked)
+    registry.register_user(99999)
+    registry.set_blocked(99999, True)
 
-    update = mock_telegram_update(chat_id=99999)  # not in allowlist
+    handler = getattr(bot, handler_name)
+    update = mock_telegram_update(chat_id=99999)  # blocked
     context = mock_telegram_context()
 
     await handler(update, context)

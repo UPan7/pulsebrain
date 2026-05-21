@@ -17,24 +17,36 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    PreCheckoutQueryHandler,
     filters,
 )
 
+from src.billing import (
+    activate_paid,
+    channel_quota_check,
+    get_plan,
+    is_active,
+    load_plans,
+    purchasable_plans,
+    start_trial,
+    usage_summary,
+)
 from src.config import (
     TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_IDS,
     add_category,
+    ensure_user_dirs,
     load_categories,
     load_channels,
     save_channels,
 )
+from src.registry import is_blocked, is_registered, register_user
 from src.extractors.youtube import get_recent_video_ids, resolve_channel_id
 from src.onboarding import (
     CALLBACK_STEPS,
@@ -50,13 +62,14 @@ from src.onboarding_presets import PRESET_CATEGORIES, PRESET_CHANNELS
 from src.pending import (
     commit_pending,
     get_pending,
+    init_pending,
     list_pending,
     read_rejected_log,
     reject_pending,
     update_pending_category,
 )
 from src.pipeline import process_web_article, process_youtube_video
-from src.profile import get_language, profile_exists
+from src.profile import get_language, init_profile, profile_exists
 from src.router import SourceType, detect_source_type
 from src.storage import (
     find_entry_by_id,
@@ -64,6 +77,7 @@ from src.storage import (
     get_recent_entries,
     get_source_text_path,
     get_stats,
+    init_processed,
     is_processed,
     make_content_id,
     mark_processed,
@@ -193,13 +207,20 @@ def _pending_category_keyboard(chat_id: int, pending_id: str) -> InlineKeyboardM
     return InlineKeyboardMarkup(buttons)
 
 
-# ── Security: allowlist filter ──────────────────────────────────────────────
+# ── Security: registry filter + subscription gate ───────────────────────────
 
 def _authorized(update: Update) -> bool:
-    """Only respond to chat_ids present in TELEGRAM_CHAT_IDS."""
+    """Drop updates from blocked chats.
+
+    Self-serve SaaS: any non-blocked chat is allowed through so a stranger
+    can reach /start and self-register. The dynamic registry (not a static
+    env allowlist) is the source of truth; blocked users are the kill-switch.
+    """
     chat_id = update.effective_chat.id if update.effective_chat else 0
-    if chat_id not in TELEGRAM_CHAT_IDS:
-        logger.warning("Unauthorized access attempt from chat_id=%s", chat_id)
+    if chat_id <= 0:
+        return False
+    if is_blocked(chat_id):
+        logger.warning("Blocked chat_id=%s attempted access", chat_id)
         return False
     return True
 
@@ -207,10 +228,10 @@ def _authorized(update: Update) -> bool:
 def _chat_id(update: Update) -> int:
     """Extract chat_id from the update. Only safe to call after authorized()."""
     cid = update.effective_chat.id if update.effective_chat else 0
-    if cid not in TELEGRAM_CHAT_IDS:
-        # Defence-in-depth: if a handler ever forgets @authorized, refuse rather
-        # than return 0 (which would silently mutate the admin's state).
-        raise PermissionError(f"chat_id {cid} not in allowlist")
+    if cid <= 0:
+        # Defence-in-depth: refuse rather than return 0 (which would
+        # silently mutate another user's state).
+        raise PermissionError(f"invalid chat_id {cid}")
     return cid
 
 
@@ -233,11 +254,65 @@ def authorized(handler: Handler) -> Handler:
     return wrapper
 
 
+def requires_active(handler: Handler) -> Handler:
+    """Decorator: gate cost-incurring commands behind an active subscription.
+
+    Unregistered users are nudged to /start; expired users get a read-only
+    upsell. Apply *inside* @authorized (i.e. below it in decorator order).
+    """
+
+    @wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = _chat_id(update)
+        lang = get_language(chat_id)
+        if not is_registered(chat_id):
+            await update.message.reply_text(t("billing_need_start", lang))
+            return
+        if not is_active(chat_id):
+            await update.message.reply_text(
+                t("billing_expired_readonly", lang),
+                reply_markup=_subscribe_keyboard(lang),
+            )
+            return
+        await handler(update, context)
+
+    return wrapper
+
+
+def _subscribe_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Single-button keyboard that opens the plan picker."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(t("billing_subscribe_button", lang),
+                             callback_data="billing:plans"),
+    ]])
+
+
 # ── Command handlers ─────────────────────────────────────────────────────────
 
 @authorized
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = _chat_id(update)
+
+    # Self-serve registration: a brand-new chat gets an account, per-user
+    # data tree, and a free trial, then enters the onboarding wizard.
+    if not is_registered(chat_id):
+        user = getattr(update, "effective_user", None)
+        label = ""
+        if user is not None:
+            label = getattr(user, "username", "") or getattr(user, "full_name", "") or ""
+        register_user(chat_id, label=label)
+        ensure_user_dirs(chat_id)
+        init_processed(chat_id)
+        init_pending(chat_id)
+        init_profile(chat_id)
+        sub = start_trial(chat_id)
+        trial_days = get_plan(sub["plan"]).get("period_days", 14)
+        await update.message.reply_text(
+            t("billing_trial_welcome", get_language(chat_id), days=trial_days)
+        )
+        await _start_wizard(update, context)
+        return
+
     if not profile_exists(chat_id):
         await _start_wizard(update, context)
         return
@@ -581,6 +656,7 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @authorized
+@requires_active
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = _chat_id(update)
     lang = get_language(chat_id)
@@ -615,6 +691,12 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 t("add_already_tracked", lang, name=channel_name)
             )
             return
+
+    # New channel — enforce the plan's tracked-channel cap.
+    allowed, reason = channel_quota_check(chat_id, len(channels))
+    if not allowed:
+        await update.message.reply_text(t(reason, lang))
+        return
 
     if category:
         channels.append({
@@ -785,7 +867,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     channels = load_channels(chat_id)
     active = sum(1 for ch in channels if ch.get("enabled", True))
 
-    await update.message.reply_text(
+    summary = usage_summary(chat_id)
+    text = (
         t("status_title", lang)
         + "\n\n"
         + t(
@@ -799,7 +882,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             avg=stats["avg_relevance"],
             this_week=stats["this_week"],
         )
+        + "\n\n"
+        + t(
+            "billing_status_line",
+            lang,
+            plan=_plan_display_name(summary["plan"], lang),
+            used=summary["items_used"],
+            limit=summary["items_limit"],
+        )
     )
+    await update.message.reply_text(text)
 
 
 @authorized
@@ -831,6 +923,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @authorized
+@requires_active
 async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Force a pipeline run for this user's enabled channels."""
     chat_id = _chat_id(update)
@@ -1057,6 +1150,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _handle_new_category_input(update, context, text.strip(), waiting_action)
         return
 
+    # Both link processing and Q&A incur LLM cost — gate on subscription.
+    lang = get_language(chat_id)
+    if not is_registered(chat_id):
+        await update.message.reply_text(t("billing_need_start", lang))
+        return
+    if not is_active(chat_id):
+        await update.message.reply_text(
+            t("billing_expired_readonly", lang),
+            reply_markup=_subscribe_keyboard(lang),
+        )
+        return
+
     urls = URL_PATTERN.findall(text)
 
     if not urls:
@@ -1215,6 +1320,13 @@ async def _handle_new_category_input(update: Update, context: ContextTypes.DEFAU
             )
             return
         channels = load_channels(chat_id)
+        allowed, reason = channel_quota_check(chat_id, len(channels))
+        if not allowed:
+            context.user_data.pop("pending_channel", None)
+            await update.message.reply_text(
+                t(reason, lang), reply_markup=_subscribe_keyboard(lang)
+            )
+            return
         channels.append({
             "name": pending["name"],
             "id": pending["id"],
@@ -1328,6 +1440,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     lang = get_language(chat_id)
+
+    if data == "billing:plans":
+        await _send_subscribe_options(chat_id, context, query.message.reply_text)
+        return
+
     if data.startswith("psave:"):
         pending_id = data.split(":", 1)[1]
         entry = get_pending(chat_id, pending_id)
@@ -1443,6 +1560,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
 
         channels = load_channels(chat_id)
+        allowed, reason = channel_quota_check(chat_id, len(channels))
+        if not allowed:
+            await query.message.reply_text(
+                t(reason, lang), reply_markup=_subscribe_keyboard(lang)
+            )
+            context.user_data.pop("pending_channel", None)
+            return
         channels.append({
             "name": pending["name"],
             "id": pending["id"],
@@ -1594,6 +1718,161 @@ async def send_error_notification(app: Application, chat_id: int, title: str, er
     )
 
 
+# ── Billing / Telegram Stars payments ───────────────────────────────────────
+
+def _plan_display_name(plan_key: str, lang: str) -> str:
+    """Localized human name for a plan key ('none' → 'No plan')."""
+    if not plan_key or plan_key == "none":
+        return t("plan_name_none", lang)
+    return t(get_plan(plan_key)["name_key"], lang)
+
+
+def _format_expiry(expires_at: Any, lang: str) -> str:
+    """Render a subscription expiry date, or 'never' for lifetime plans."""
+    if not expires_at:
+        return t("billing_expires_never", lang)
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(expires_at)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return str(expires_at)
+
+
+async def _build_plan_invoice_link(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    plan_key: str,
+    plan: dict[str, Any],
+    lang: str,
+) -> str:
+    """Create a Telegram Stars invoice link (recurring when configured)."""
+    name = t(plan["name_key"], lang)
+    kwargs: dict[str, Any] = dict(
+        title=name,
+        description=t("billing_invoice_desc", lang, plan=name),
+        payload=f"plan:{plan_key}:{chat_id}",
+        currency="XTR",
+        prices=[LabeledPrice(label=name, amount=int(plan.get("price_xtr", 0)))],
+    )
+    sub_days = int(plan.get("subscription_period_days", 0))
+    if sub_days > 0:
+        # Telegram recurring Star subscriptions only allow a 30-day period.
+        kwargs["subscription_period"] = sub_days * 86400
+    return await context.bot.create_invoice_link(**kwargs)
+
+
+async def _send_subscribe_options(chat_id: int, context: ContextTypes.DEFAULT_TYPE, reply_func) -> None:
+    """Render the plan picker — one Stars invoice-link button per plan."""
+    lang = get_language(chat_id)
+    plans = purchasable_plans()
+    if not plans:
+        await reply_func(t("billing_no_plans", lang))
+        return
+    rows: list[list[InlineKeyboardButton]] = []
+    for plan_key, plan in plans:
+        try:
+            link = await _build_plan_invoice_link(context, chat_id, plan_key, plan, lang)
+        except Exception as exc:
+            logger.warning("Failed to create invoice link for %s: %s", plan_key, exc)
+            continue
+        label = t(
+            "billing_plan_button", lang,
+            name=t(plan["name_key"], lang), price=int(plan.get("price_xtr", 0)),
+        )
+        rows.append([InlineKeyboardButton(label, url=link)])
+    if not rows:
+        await reply_func(t("billing_invoice_failed", lang))
+        return
+    await reply_func(t("billing_plans_intro", lang), reply_markup=InlineKeyboardMarkup(rows))
+
+
+@authorized
+async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = _chat_id(update)
+    lang = get_language(chat_id)
+    if not is_registered(chat_id):
+        await update.message.reply_text(t("billing_need_start", lang))
+        return
+    await _send_subscribe_options(chat_id, context, update.message.reply_text)
+
+
+@authorized
+async def cmd_billing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = _chat_id(update)
+    lang = get_language(chat_id)
+    if not is_registered(chat_id):
+        await update.message.reply_text(t("billing_need_start", lang))
+        return
+    summary = usage_summary(chat_id)
+    text = t(
+        "billing_status", lang,
+        plan=_plan_display_name(summary["plan"], lang),
+        status=t(f"billing_status_{summary['status']}", lang),
+        expires=_format_expiry(summary["expires_at"], lang),
+        used=summary["items_used"],
+        limit=summary["items_limit"],
+        channels=summary["channels_limit"],
+    )
+    await update.message.reply_text(text, reply_markup=_subscribe_keyboard(lang))
+
+
+async def precheckout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Approve/reject a Telegram Stars pre-checkout query.
+
+    Not wrapped in @authorized — a PreCheckoutQuery update carries no chat,
+    so the decorator would drop it and the payment would time out.
+    """
+    query = update.pre_checkout_query
+    if query is None:
+        return
+    chat_id = query.from_user.id if query.from_user else 0
+    payload = query.invoice_payload or ""
+    parts = payload.split(":")
+    ok = (
+        len(parts) >= 2
+        and parts[0] == "plan"
+        and parts[1] in load_plans()
+        and not is_blocked(chat_id)
+    )
+    if ok:
+        await query.answer(ok=True)
+    else:
+        await query.answer(
+            ok=False,
+            error_message=t("billing_precheckout_error", get_language(chat_id)),
+        )
+
+
+@authorized
+async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Activate / extend a plan after a Telegram Stars payment lands.
+
+    Recurring renewals arrive as fresh SuccessfulPayment updates and hit
+    the same path — :func:`activate_paid` pushes the expiry forward.
+    """
+    chat_id = _chat_id(update)
+    lang = get_language(chat_id)
+    sp = update.message.successful_payment if update.message else None
+    if sp is None:
+        return
+    parts = (sp.invoice_payload or "").split(":")
+    if len(parts) < 2 or parts[0] != "plan":
+        logger.warning("Unexpected payment payload: %s", sp.invoice_payload)
+        return
+    plan_key = parts[1]
+    plan = get_plan(plan_key)
+    activate_paid(
+        chat_id, plan_key,
+        charge_id=sp.telegram_payment_charge_id,
+        period_days=int(plan.get("period_days", 30)),
+        expires_at=getattr(sp, "subscription_expiration_date", None),
+    )
+    logger.info("Payment activated plan=%s for chat_id=%s", plan_key, chat_id)
+    await update.message.reply_text(
+        t("billing_payment_success", lang, plan=t(plan["name_key"], lang))
+    )
+
+
 # ── Bot setup ────────────────────────────────────────────────────────────────
 
 def create_bot_application(post_init=None) -> Application:
@@ -1620,6 +1899,12 @@ def create_bot_application(post_init=None) -> Application:
     app.add_handler(CommandHandler("onboarding", cmd_onboarding))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("language", cmd_language))
+    app.add_handler(CommandHandler("subscribe", cmd_subscribe))
+    app.add_handler(CommandHandler("billing", cmd_billing))
+
+    # Telegram Stars payment flow.
+    app.add_handler(PreCheckoutQueryHandler(precheckout_handler))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, on_successful_payment))
 
     app.add_handler(CallbackQueryHandler(callback_handler))
 

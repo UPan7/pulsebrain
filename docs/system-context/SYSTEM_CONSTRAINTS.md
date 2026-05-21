@@ -47,15 +47,15 @@
 
 ---
 
-## Constraint 4: Authorized users only (`TELEGRAM_CHAT_IDS` allowlist)
+## Constraint 4: Dynamic registry + subscription gate
 
-**Rule:** The bot responds to messages only from `chat_id`s in the `TELEGRAM_CHAT_IDS` environment variable. Unauthorized messages are silently ignored (no error reply — that would let strangers probe the deployment).
+**Rule:** The bot is a self-serve SaaS. Any non-`blocked` chat may reach handlers so it can `/start` and self-register into `data/users/registry.json`. `TELEGRAM_CHAT_IDS` only seeds admin accounts. Cost-incurring actions (`/add`, `/run`, link drops, Q&A) are gated on an active subscription; expired users keep read-only access. `blocked` is the kill-switch against abuse.
 
-**Why:** This is a single-tenant-per-friend-group product, not a public bot. Making it public adds rate-limiting, quotas, moderation — none of which are built. Allowlist is the only gate.
+**Why:** The product is commercialized — strangers must be able to sign up and pay without operator action, while managed LLM/proxy costs stay bounded per user via quotas. See [ADR-007](../DECISIONS.md), [ADR-008](../DECISIONS.md).
 
-**Enforcement:** `_authorized(update)` check ([src/telegram_bot.py:182](../../src/telegram_bot.py#L182)) at the top of every handler; unauthorized attempts are logged and silently dropped. `tests/test_telegram_bot.py` verifies unauthorized messages produce no reply.
+**Enforcement:** `@authorized` (drops `blocked` chats) + `@requires_active` (subscription gate) decorators in [src/telegram_bot.py](../../src/telegram_bot.py); the pipeline `quota_check` gate in [src/pipeline.py](../../src/pipeline.py); the scheduler skips inactive users. `tests/test_multi_user.py`, `tests/test_billing*.py` verify the gates.
 
-**Violation example:** "Let's add a paid tier for outside users." Separate fork or separate gate — do not remove the allowlist.
+**Violation example:** "Just remove the quota check to make this faster." Quotas bound the cost of a managed-cost SaaS — removing them exposes unbounded spend.
 
 ---
 

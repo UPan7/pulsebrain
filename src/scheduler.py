@@ -7,16 +7,17 @@ import logging
 
 import feedparser
 
+from src.billing import is_active, quota_check
 from src.config import (
     CHECK_INTERVAL_MINUTES,
     MIN_RELEVANCE_THRESHOLD,
-    TELEGRAM_CHAT_IDS,
     load_channels,
     logger,
 )
 from src.pending import reject_pending
 from src.pipeline import process_youtube_video
 from src.profile import get_language
+from src.registry import all_user_ids
 from src.storage import is_processed, make_content_id, mark_processed
 from src.strings import t
 
@@ -73,13 +74,23 @@ async def run_channel_check(chat_id: int, app=None) -> int:
 
     results = await asyncio.gather(*[_fetch_one(ch) for ch in channels])
 
+    quota_reached = False
     for channel, videos in results:
+        if quota_reached:
+            break
         category = channel.get("category")
 
         for video in videos:
             content_id = make_content_id("youtube_video", video["video_id"])
             if is_processed(chat_id, content_id):
                 continue
+
+            # Stop this user's cycle the moment their monthly quota is hit —
+            # avoids spamming the digest with per-video quota errors.
+            allowed, _reason = quota_check(chat_id)
+            if not allowed:
+                quota_reached = True
+                break
 
             logger.info("[chat_id=%s] Processing new video: %s", chat_id, video["title"])
 
@@ -89,6 +100,7 @@ async def run_channel_check(chat_id: int, app=None) -> int:
                 video["url"],
                 category=category,
                 upload_date=video.get("published"),
+                source="scheduler",
             )
             if result and "error" not in result:
                 threshold = channel.get("min_relevance", MIN_RELEVANCE_THRESHOLD)
@@ -135,6 +147,15 @@ async def run_channel_check(chat_id: int, app=None) -> int:
         "[chat_id=%s] Channel check complete. Processed %d, rejected %d, failed %d across %d channels.",
         chat_id, total_processed, total_rejected, total_failed, channels_checked,
     )
+
+    if quota_reached and app is not None:
+        try:
+            await app.bot.send_message(
+                chat_id=chat_id,
+                text=t("quota_scheduler_reached", get_language(chat_id)),
+            )
+        except Exception as exc:
+            logger.warning("[chat_id=%s] Failed to send quota notice: %s", chat_id, exc)
 
     await _send_round_digest(
         app,
@@ -197,6 +218,12 @@ def setup_scheduler(app):
 
     async def _run_one(chat_id: int) -> None:
         try:
+            if not is_active(chat_id):
+                logger.info(
+                    "[chat_id=%s] Skipping scheduled check — subscription inactive",
+                    chat_id,
+                )
+                return
             count = await run_channel_check(chat_id, app=app)
             if count > 0:
                 logger.info("[chat_id=%s] Scheduled check found %d new videos", chat_id, count)
@@ -205,12 +232,13 @@ def setup_scheduler(app):
             logger.error("[chat_id=%s] Scheduled check failed: %s", chat_id, exc)
 
     async def scheduled_check():
-        logger.info("Scheduled channel check starting for %d users...", len(TELEGRAM_CHAT_IDS))
+        user_ids = all_user_ids()
+        logger.info("Scheduled channel check starting for %d users...", len(user_ids))
         # Run per-user checks concurrently. LLM calls inside are bounded by
         # OPENROUTER_SEMAPHORE in summarize/categorize, so a burst of users
         # cannot exceed the global OpenRouter concurrency cap.
         await asyncio.gather(
-            *(_run_one(cid) for cid in TELEGRAM_CHAT_IDS),
+            *(_run_one(cid) for cid in user_ids),
             return_exceptions=False,
         )
 
@@ -225,7 +253,7 @@ def setup_scheduler(app):
     logger.info(
         "Scheduler configured — will check every %d minutes across %d users",
         CHECK_INTERVAL_MINUTES,
-        len(TELEGRAM_CHAT_IDS),
+        len(all_user_ids()),
     )
 
     return scheduler

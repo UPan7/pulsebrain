@@ -14,6 +14,24 @@ Reverse-chronological. Most recent on top. One entry per meaningful change — c
 
 ---
 
+## 2026-05-21 — SaaS conversion: self-serve signup, subscriptions, quotas
+
+**What:** Turned the friends-only bot into a sellable hosted SaaS (lean MVP).
+- Dynamic user registry ([src/registry.py](../src/registry.py), `data/users/registry.json`) replaces the static `TELEGRAM_CHAT_IDS` allowlist; that env var now only seeds admins. `/start` self-registers any non-blocked chat.
+- Subscription billing ([src/billing.py](../src/billing.py), `plans.yml`): trial / basic / pro / lifetime plans with per-user `subscription.yaml` + `usage.json`. Channel and monthly-item quotas enforced; the pipeline gates every item on `quota_check()` before incurring cost.
+- Telegram Stars payment flow — `/subscribe` (recurring Star invoice links) and `/billing`, plus `PreCheckoutQuery` / `SuccessfulPayment` handlers.
+- Expired users keep read-only access (`/search`, `/recent`, `/get`); `/add`, `/run`, link drops and Q&A require an active plan.
+
+**Why:** The product is being commercialized — strangers must be able to sign up and pay without operator action, and managed LLM/proxy costs must be bounded per user.
+
+**Impact:** New: [src/registry.py](../src/registry.py), [src/billing.py](../src/billing.py), [plans.yml](../plans.yml), [tests/test_registry.py](../tests/test_registry.py), [tests/test_billing.py](../tests/test_billing.py), [tests/test_billing_flow.py](../tests/test_billing_flow.py). Modified: [src/config.py](../src/config.py), [src/pipeline.py](../src/pipeline.py), [src/scheduler.py](../src/scheduler.py), [src/telegram_bot.py](../src/telegram_bot.py), [src/main.py](../src/main.py), [src/migration.py](../src/migration.py), [src/strings.py](../src/strings.py) (26 billing keys ×10 languages), [tests/conftest.py](../tests/conftest.py), [docker-compose.yml](../docker-compose.yml), [.env.example](../.env.example). Test suite 579 → 622, coverage 89.7%.
+
+**Breaking changes:** Authorization no longer keyed on the env allowlist. Existing allowlisted users are grandfathered (marker-guarded migration → unlimited `lifetime` plan), so deployed instances keep working. See [ADR-007](DECISIONS.md#adr-007-dynamic-user-registry-replaces-the-static-allowlist-2026-05-21), [ADR-008](DECISIONS.md#adr-008-subscription-billing-in-jsonyaml-paid-via-telegram-stars-2026-05-21).
+
+**Migration:** Idempotent, marker-guarded (`.migrated_billing_v1`). Runs automatically on first boot.
+
+---
+
 ## 2026-04-19 — Per-user category isolation (drop shared defaults)
 
 **What:** Removed `_DEFAULT_CATEGORIES` from [src/config.py](../src/config.py). `load_categories(chat_id)` now returns only the user's own `categories.yml` (empty dict if none). In [src/categorize.py](../src/categorize.py), the LLM-fallback path no longer hardcodes `ai-news` — a second LLM call generates a fresh slug + description from the content; on double-failure it falls back to a per-user `uncategorized` slug that lives only in that user's file.

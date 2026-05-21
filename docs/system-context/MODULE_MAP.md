@@ -31,8 +31,10 @@ pulse-bot/
 │   ├── storage.py                  # Markdown writer, processed.json dedup, _index.md, search, stats
 │   ├── pending.py                  # Approval queue (stage / commit / reject) + rejected log
 │   ├── profile.py                  # Per-user persona YAML + relevance-context builder
-│   ├── migration.py                # One-shot legacy → admin-namespace migrator
-│   ├── telegram_bot.py             # All Telegram command handlers + inline keyboards
+│   ├── migration.py                # One-shot legacy migrator + billing grandfathering
+│   ├── registry.py                 # Dynamic user registry (self-serve signup)
+│   ├── billing.py                  # Plans, subscriptions, usage metering, quotas
+│   ├── telegram_bot.py             # Telegram command handlers + Stars payment flow
 │   ├── onboarding.py               # Onboarding wizard state machine (pure logic)
 │   ├── onboarding_presets.py       # Starter categories + empty starter-channel list
 │   ├── strings.py                  # t() + SUPPORTED_LANGS — 10-language UI strings
@@ -41,7 +43,8 @@ pulse-bot/
 │       └── web.py                    # Trafilatura download + clean extract
 ├── tests/                         # pytest suite (≥ 85 % coverage gate)
 ├── data/                          # Per-user runtime state (volume — created on first boot)
-│   └── users/{chat_id}/           #   profile.yaml, channels.yml, categories.yml, processed.json, pending.json, rejected_log.jsonl
+│   ├── users/registry.json        #   dynamic user registry (shared, not per-user)
+│   └── users/{chat_id}/           #   profile.yaml, channels.yml, categories.yml, processed.json, pending.json, rejected_log.jsonl, subscription.yaml, usage.json
 ├── knowledge/                     # Per-user Markdown knowledge base (volume)
 │   └── {chat_id}/_index.md        #   {category}/{YYYY}/{MM}/*.md + *.source.txt
 ├── docs/                          # Docs (this file lives here)
@@ -80,15 +83,17 @@ pulse-bot/
 | [`main.py`](../../src/main.py) | `main()` — validate env, ensure dirs, run migration once, per-user init for each allowed chat_id, schedule via `post_init`, `app.run_polling(drop_pending_updates=True)` |
 | [`config.py`](../../src/config.py) | Parses `TELEGRAM_CHAT_IDS` (supports `id:Name`), exports path helpers `user_dir / user_profile_file / user_channels_file / user_categories_file / user_processed_file / user_pending_file / user_rejected_log_file / user_knowledge_dir`, owns `load_categories` / `add_category` / `load_channels` / `save_channels` with per-user locks, configures `logger` |
 | [`router.py`](../../src/router.py) | `SourceType` constants; `detect_source_type(url)` for youtube_video / youtube_channel / web_article; `extract_video_id(url)` handles `youtu.be/X` and `?v=X` |
-| [`pipeline.py`](../../src/pipeline.py) | Shared `_process_content()` — dedup check → extract (YouTube or web) → summarize → categorize → `stage_pending` → `mark_processed(status="pending")`. Public API: `process_youtube_video`, `process_web_article` |
-| [`scheduler.py`](../../src/scheduler.py) | `fetch_channel_videos(channel_id)` RSS parse; `run_channel_check(chat_id, app)` iterates all enabled channels, processes new videos, auto-rejects < `min_relevance`, sends per-item notification + end-of-run digest (only on non-zero activity); `setup_scheduler(app)` registers one `IntervalTrigger` job that loops all allowed users |
+| [`pipeline.py`](../../src/pipeline.py) | Shared `_process_content()` — `quota_check` gate → dedup check → extract (YouTube or web) → summarize → categorize → `stage_pending` → `mark_processed(status="pending")` → `record_usage`. Public API: `process_youtube_video`, `process_web_article` (both take a `source` arg for metering) |
+| [`scheduler.py`](../../src/scheduler.py) | `fetch_channel_videos(channel_id)` RSS parse; `run_channel_check(chat_id, app)` iterates all enabled channels, processes new videos, auto-rejects < `min_relevance`, stops + notifies once on monthly quota exhaustion; `setup_scheduler(app)` registers one `IntervalTrigger` job looping `registry.all_user_ids()` and skipping inactive subscriptions |
 | [`summarize.py`](../../src/summarize.py) | `summarize_content(chat_id, content, title, source_name, source_type, date)` — builds `LANGUAGE_DIRECTIVES[lang]` + user-context block from profile, calls OpenRouter, parses JSON, retries once on malformed output. `answer_question(chat_id, question, sources)` for `/search` follow-ups |
 | [`categorize.py`](../../src/categorize.py) | `categorize_content(chat_id, title, content)` — LLM picks a slug; `_auto_merge()` pure fuzzy-match against existing categories at 0.75 threshold (catches `ai-agent`→`ai-agents`); on malformed slug or API error, `_generate_fresh_category()` makes a second LLM call for a content-derived slug + description; safety net is a per-user `uncategorized` slug |
 | [`storage.py`](../../src/storage.py) | `init_processed(chat_id)` / `is_processed` / `mark_processed` / `make_content_id(source_type, identifier)`. `save_entry(...)` writes Markdown + `.source.txt` sibling. `_update_index(chat_id)` regenerates `_index.md`. `move_entry` re-categorizes. `search_knowledge`, `search_for_question`, `get_recent_entries`, `get_entries_in_category`, `get_stats`, `entry_id`, `find_entry_by_id`, `read_entry_markdown`, `get_source_text_path`. TTL entry cache (60 s) per user |
 | [`pending.py`](../../src/pending.py) | `init_pending` / `stage_pending` / `get_pending` / `list_pending` / `update_pending_category` / `commit_pending` (→ `save_entry` → `mark_processed(status="ok")`) / `reject_pending(reason)` (→ `_append_rejected_log` → `mark_processed(status="rejected")`). `read_rejected_log` for `/rejected` command |
 | [`profile.py`](../../src/profile.py) | `init_profile` / `load_profile` (safe — falls through to defaults) / `save_profile` / `profile_exists` / `get_language`. `build_relevance_context(chat_id)` merges profile + top-categories + top-topics + recent-avg + rejected titles for summarize prompt. `format_relevance_context` flattens to a prompt-ready string |
-| [`migration.py`](../../src/migration.py) | `migrate_legacy_to_admin(admin_chat_id)` — idempotent via `data/.migrated_v1` marker. Moves flat legacy files (`data/processed.json`, `channels.yml`, `knowledge/{category}/…`) into `data/users/{admin}/` + `knowledge/{admin}/`. Skips when admin namespace already has content (no silent merge) |
-| [`telegram_bot.py`](../../src/telegram_bot.py) | 17 command handlers registered in `create_bot_application()` at line 1489. User-auth decorator, inline-keyboard callbacks for approve/reject/category-edit, `send_notification(app, chat_id, result)` called from scheduler |
+| [`migration.py`](../../src/migration.py) | `migrate_legacy_to_admin(admin_chat_id)` — idempotent via `data/.migrated_v1`. `grandfather_allowlisted_users(ids)` — idempotent via `data/.migrated_billing_v1`; registers pre-SaaS env users and assigns the unlimited `lifetime` plan (skips users with an existing subscription) |
+| [`registry.py`](../../src/registry.py) | Dynamic user registry at `data/users/registry.json`. `init_registry`, `all_user_ids`, `is_registered` / `is_admin` / `is_blocked`, `register_user`, `set_blocked`, `seed_admins`. Replaces the static allowlist; `_authorized` now only drops blocked chats |
+| [`billing.py`](../../src/billing.py) | Plan catalog from `plans.yml` (`load_plans` / `get_plan` / `purchasable_plans`); per-user `subscription.yaml` (`start_trial`, `activate_paid`, `grandfather`, `cancel_subscription`, `subscription_status`, `is_active`); per-user `usage.json` with lazy monthly rollover (`load_usage`, `record_usage`); `quota_check` / `channel_quota_check` / `usage_summary` |
+| [`telegram_bot.py`](../../src/telegram_bot.py) | 19 command handlers + Telegram Stars payment flow (`/subscribe`, `/billing`, `PreCheckoutQuery`, `SuccessfulPayment`) registered in `create_bot_application()`. `@authorized` (blocked filter) + `@requires_active` (subscription gate) decorators, inline-keyboard callbacks, `send_notification(app, chat_id, result)` called from scheduler |
 | [`onboarding.py`](../../src/onboarding.py) | `STEPS = [lang, welcome, persona, learning, stack, notinterested, categories, channels, done]`. `CALLBACK_STEPS` vs text steps. `new_draft()`, `step_key(i)`, `next_step(i)`, `parse_multiline(text)`, `apply_draft(chat_id, draft)` writes profile + categories + channels |
 | [`onboarding_presets.py`](../../src/onboarding_presets.py) | `PRESET_CATEGORIES` dict (10 slugs — the starter menu shown during the onboarding wizard; each user's `categories.yml` holds only what they explicitly toggle), `PRESET_CHANNELS = []` (wizard skips channel step when empty) |
 | [`strings.py`](../../src/strings.py) | `t(key, lang, **kwargs)` single lookup with fallback chain → `en`. `SUPPORTED_LANGS = ["en","de","fr","es","it","pt","zh","ja","ru","ar"]`. Large (2727 LOC) because every template has 10 translations |
@@ -196,6 +201,9 @@ extractors.web ──▶ trafilatura only (no internal deps)
 | [`test_config.py`](../../tests/test_config.py) | `_parse_chat_entries` (id, id:Name, mixed, dedup), `load_categories` merge, `add_category` |
 | [`test_router.py`](../../tests/test_router.py) | `detect_source_type` + `extract_video_id` across URL shapes |
 | [`test_pipeline.py`](../../tests/test_pipeline.py) | `process_youtube_video` + `process_web_article` — happy path, duplicate, transcript-fail, summarize-fail, category passthrough |
+| [`test_registry.py`](../../tests/test_registry.py) | `register_user` idempotency, `all_user_ids` blocked filtering, admin roles, `seed_admins`, persistence reload, tenant isolation |
+| [`test_billing.py`](../../tests/test_billing.py) | Plan catalog, trial/paid/grandfather lifecycle, expiry derivation, quota + channel checks, monthly rollover, pipeline gate integration, billing migration |
+| [`test_billing_flow.py`](../../tests/test_billing_flow.py) | Telegram Stars pre-checkout + `SuccessfulPayment` activation/renewal, `/subscribe` + `/billing`, `/start` self-registration, `requires_active` gate |
 | [`test_scheduler.py`](../../tests/test_scheduler.py) | `run_channel_check` — relevance gate, auto-reject, notification, digest only on non-zero, per-channel `min_relevance` |
 | [`test_extractors.py`](../../tests/test_extractors.py) | YouTube transcript retries, metadata oEmbed fallback, `resolve_channel_id`, `get_recent_video_ids` |
 | [`test_extractors_web.py`](../../tests/test_extractors_web.py) | Trafilatura happy path, short-article rejection, metadata absence |

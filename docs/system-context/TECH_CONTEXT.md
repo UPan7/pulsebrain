@@ -50,6 +50,7 @@
 - `InlineKeyboardButton(callback_data=…)` payload must be ≤ 64 bytes — URLs and long paths won't fit.
 - Bot API exposes no message history — tests and error recovery must not rely on looking up old messages.
 - `ConversationHandler` was deliberately avoided — the onboarding wizard uses plain `context.user_data["onboarding_step"]` (index into `STEPS`) because ConversationHandler's state routing collides with global command handlers like `/cancel`.
+- **Telegram Stars billing:** recurring subscriptions use `Bot.create_invoice_link(currency="XTR", subscription_period=…)` — *not* `send_invoice`, which has no `subscription_period` param. The recurring period is fixed at **2592000 s (30 days)** — Telegram allows no other value, so native annual recurring plans are impossible. A `PreCheckoutQuery` update carries **no chat** (`update.effective_chat` is `None`), so its handler must NOT use the `@authorized` decorator — derive the user from `query.from_user.id` instead. Renewals arrive as fresh `SuccessfulPayment` updates (`is_recurring=True`).
 
 ---
 

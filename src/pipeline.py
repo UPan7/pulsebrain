@@ -19,6 +19,35 @@ from src.summarize import summarize_content
 logger = logging.getLogger(__name__)
 
 
+def _error(
+    lang: str,
+    key: str,
+    kind: str,
+    *,
+    detail: str | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Build a pipeline error result.
+
+    ``error``        — the localized, user-facing message (unchanged shape).
+    ``error_code``   — the ``t()`` key itself: a stable machine identifier.
+                       Callers branch on this, never on the prose, because
+                       the prose is rendered in ten languages.
+    ``failure_kind`` — ``"permanent"`` | ``"transient"`` | ``"duplicate"``.
+                       ``"duplicate"`` means "already recorded, do not touch
+                       the existing record".
+    ``failure_detail`` — optional extractor-level code, diagnostics only.
+    """
+    result: dict[str, Any] = {
+        "error": t(key, lang, **kwargs),
+        "error_code": key,
+        "failure_kind": kind,
+    }
+    if detail:
+        result["failure_detail"] = detail
+    return result
+
+
 def _process_content(
     chat_id: int,
     url: str,
@@ -37,11 +66,11 @@ def _process_content(
     if source_type == "youtube_video":
         video_id = extract_video_id(url)
         if not video_id:
-            return {"error": t("pipeline_err_video_id_extract", lang)}
+            return _error(lang, "pipeline_err_video_id_extract", "permanent")
 
         content_id = make_content_id("youtube_video", video_id)
         if is_processed(chat_id, content_id):
-            return {"error": t("pipeline_err_video_already_processed", lang)}
+            return _error(lang, "pipeline_err_video_already_processed", "duplicate")
 
         meta = get_video_metadata(video_id)
         title = meta["title"] or f"Video {video_id}"
@@ -52,18 +81,33 @@ def _process_content(
             or datetime.now(timezone.utc).strftime("%Y-%m-%d")
         )
 
-        content = get_transcript(video_id)
+        transcript_failure: dict[str, str] = {}
+        content = get_transcript(video_id, failure_out=transcript_failure)
         if not content:
-            return {"error": t("pipeline_err_transcript_unavailable", lang, title=title)}
+            # Default transient: a patched get_transcript leaves the sink
+            # empty, and an unclassified failure must never blacklist.
+            return _error(
+                lang,
+                "pipeline_err_transcript_unavailable",
+                transcript_failure.get("kind", "transient"),
+                detail=transcript_failure.get("code"),
+                title=title,
+            )
 
     elif source_type == "web_article":
         content_id = make_content_id("web_article", url)
         if is_processed(chat_id, content_id):
-            return {"error": t("pipeline_err_article_already_processed", lang)}
+            return _error(lang, "pipeline_err_article_already_processed", "duplicate")
 
-        article = extract_web_article(url)
+        article_failure: dict[str, str] = {}
+        article = extract_web_article(url, failure_out=article_failure)
         if not article:
-            return {"error": t("pipeline_err_web_extract_failed", lang)}
+            return _error(
+                lang,
+                "pipeline_err_web_extract_failed",
+                article_failure.get("kind", "transient"),
+                detail=article_failure.get("code"),
+            )
 
         title = article["title"] or url
         author = article["author"]
@@ -72,7 +116,12 @@ def _process_content(
         source_name = sitename or url.split("/")[2] if "/" in url else url
         content = article["text"]
     else:
-        return {"error": t("pipeline_err_unknown_source_type", lang, source_type=source_type)}
+        return _error(
+            lang,
+            "pipeline_err_unknown_source_type",
+            "permanent",
+            source_type=source_type,
+        )
 
     # ── Summarize ───────────────────────────────────────────────────────────
     summary = summarize_content(
@@ -84,7 +133,11 @@ def _process_content(
         date=date_str,
     )
     if not summary:
-        return {"error": t("pipeline_err_summarize_failed", lang, title=title)}
+        # Transient by nature: summarize_content returns None on an
+        # OpenRouter API error or two malformed-JSON responses in a row.
+        # Recording that as permanent would blacklist good content over a
+        # provider blip — the second-largest source of the bug being fixed.
+        return _error(lang, "pipeline_err_summarize_failed", "transient", title=title)
 
     # ── Categorize ──────────────────────────────────────────────────────────
     if category:

@@ -333,3 +333,150 @@ def test_pipeline_invalid_video_url_returns_error(chat_id):
 
     result = process_youtube_video(chat_id, "https://www.youtube.com/watch")
     assert "error" in result
+
+
+# ── Machine-readable error contract ────────────────────────────────────────
+
+
+def _transcript_failing(kind: str, code: str):
+    """Fake get_transcript that fails and fills the caller's failure sink."""
+
+    def _fake(video_id, languages=None, *, failure_out=None):
+        if failure_out is not None:
+            failure_out.update(kind=kind, code=code)
+        return None
+
+    return _fake
+
+
+def test_error_carries_stable_error_code(chat_id):
+    """Callers branch on the t() key, never on the localized prose."""
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value=None),
+    ):
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=codetest")
+
+    assert result["error_code"] == "pipeline_err_transcript_unavailable"
+    assert result["error"] != result["error_code"]
+
+
+def test_transcript_permanent_propagates_kind(chat_id):
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", new=_transcript_failing("permanent", "TranscriptsDisabled")),
+    ):
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=permvid1")
+
+    assert result["failure_kind"] == "permanent"
+    assert result["failure_detail"] == "TranscriptsDisabled"
+
+
+def test_transcript_transient_propagates_kind(chat_id):
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", new=_transcript_failing("transient", "ProxyError")),
+    ):
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=transvid")
+
+    assert result["failure_kind"] == "transient"
+    assert result["failure_detail"] == "ProxyError"
+
+
+def test_transcript_failure_defaults_transient(chat_id):
+    """A plain return_value=None patch leaves the sink empty — must not blacklist."""
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value=None),
+    ):
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=defvid01")
+
+    assert result["failure_kind"] == "transient"
+    assert "failure_detail" not in result
+
+
+def test_summarize_failure_is_transient(chat_id):
+    """An OpenRouter blip must not permanently blacklist the video."""
+    from src.pipeline import process_youtube_video
+
+    with (
+        patch("src.pipeline.get_video_metadata", return_value={"title": "T", "channel": "C", "upload_date": None}),
+        patch("src.pipeline.get_transcript", return_value="transcript"),
+        patch("src.pipeline.summarize_content", return_value=None),
+    ):
+        result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=sumfail1")
+
+    assert result["failure_kind"] == "transient"
+    assert result["error_code"] == "pipeline_err_summarize_failed"
+
+
+def test_already_processed_is_duplicate_kind(chat_id):
+    from src.pipeline import process_youtube_video
+    from src.storage import make_content_id, mark_processed
+
+    mark_processed(chat_id, make_content_id("youtube_video", "dupvid01"))
+
+    result = process_youtube_video(chat_id, "https://www.youtube.com/watch?v=dupvid01")
+    assert result["failure_kind"] == "duplicate"
+    assert result["error_code"] == "pipeline_err_video_already_processed"
+
+
+def test_web_already_processed_is_duplicate_kind(chat_id):
+    from src.pipeline import process_web_article
+    from src.storage import make_content_id, mark_processed
+
+    url = "https://example.com/dup"
+    mark_processed(chat_id, make_content_id("web_article", url))
+
+    result = process_web_article(chat_id, url)
+    assert result["failure_kind"] == "duplicate"
+
+
+def test_video_id_extract_failure_is_permanent(chat_id):
+    """A malformed URL will not parse tomorrow either."""
+    from src.pipeline import process_youtube_video
+
+    result = process_youtube_video(chat_id, "https://www.youtube.com/watch")
+    assert result["failure_kind"] == "permanent"
+    assert result["error_code"] == "pipeline_err_video_id_extract"
+
+
+def test_unknown_source_type_is_permanent(chat_id):
+    """A routing bug, not an outage."""
+    from src.pipeline import _process_content
+
+    result = _process_content(chat_id, "https://x.com/a", "podcast")
+    assert result["failure_kind"] == "permanent"
+    assert result["error_code"] == "pipeline_err_unknown_source_type"
+
+
+def test_web_extract_failure_propagates_kind(chat_id):
+    from src.pipeline import process_web_article
+
+    def _fake(url, *, failure_out=None):
+        if failure_out is not None:
+            failure_out.update(kind="permanent", code="TextTooShort")
+        return None
+
+    with patch("src.pipeline.extract_web_article", new=_fake):
+        result = process_web_article(chat_id, "https://example.com/paywall")
+
+    assert result["failure_kind"] == "permanent"
+    assert result["failure_detail"] == "TextTooShort"
+
+
+def test_web_extract_failure_defaults_transient(chat_id):
+    from src.pipeline import process_web_article
+
+    with patch("src.pipeline.extract_web_article", return_value=None):
+        result = process_web_article(chat_id, "https://example.com/dead")
+
+    assert result["failure_kind"] == "transient"

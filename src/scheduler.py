@@ -123,11 +123,32 @@ async def run_channel_check(chat_id: int, app=None) -> int:
                 failed_details.append(
                     f"• {video['title']}: {result['error']}"
                 )
-                mark_processed(chat_id, content_id, status="failed")
-                logger.warning(
-                    "[chat_id=%s] Failed to process %s: %s",
-                    chat_id, video["title"], result["error"],
-                )
+                # A missing kind means transient: an unclassified failure must
+                # never become a permanent blacklist on the first try. The
+                # attempt cap bounds the cost of that assumption.
+                failure_kind = result.get("failure_kind", "transient")
+                if failure_kind == "duplicate":
+                    # A record already exists. Overwriting it would downgrade
+                    # an ok/pending/rejected entry to "failed". Both gates are
+                    # time-dependent now, so this can only fire if they ever
+                    # disagree — cheap insurance against that.
+                    logger.warning(
+                        "[chat_id=%s] %s already recorded — leaving record intact",
+                        chat_id, video["title"],
+                    )
+                else:
+                    mark_processed(
+                        chat_id,
+                        content_id,
+                        status="failed",
+                        failure_kind=failure_kind,
+                        error_code=result.get("error_code"),
+                    )
+                    logger.warning(
+                        "[chat_id=%s] Failed to process %s (%s/%s): %s",
+                        chat_id, video["title"], failure_kind,
+                        result.get("error_code", "unknown"), result["error"],
+                    )
 
             await asyncio.sleep(3)
 

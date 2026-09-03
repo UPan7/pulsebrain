@@ -626,3 +626,217 @@ async def test_scheduler_reject_passes_low_relevance_reason(chat_id):
         await run_channel_check(chat_id)
 
     mock_reject.assert_called_once_with(chat_id, "x", reason="low_relevance")
+
+
+# ── Failure classification & retry eligibility ─────────────────────────────
+
+
+def _one_channel():
+    return [{"name": "Ch", "id": "UC_ch", "category": "ai-news", "enabled": True}]
+
+
+def _seed_failed(chat_id, video_id, *, kind, attempts=1, retry_hours_ago=None):
+    """Write a failed record directly, so cooldown state is exact."""
+    from datetime import datetime, timedelta, timezone
+
+    import src.storage
+    from src.storage import make_content_id
+
+    record = {
+        "status": "failed",
+        "processed_at": "2026-05-08T02:11:00+00:00",
+        "failure_kind": kind,
+        "attempts": attempts,
+    }
+    if retry_hours_ago is not None:
+        record["retry_after"] = (
+            datetime.now(timezone.utc) - timedelta(hours=retry_hours_ago)
+        ).isoformat()
+    src.storage._processed_caches[chat_id][make_content_id("youtube_video", video_id)] = record
+
+
+@pytest.mark.asyncio
+async def test_permanent_failure_marks_record_permanent(chat_id):
+    import src.storage
+    from src.scheduler import run_channel_check
+    from src.storage import make_content_id
+
+    err = {
+        "error": "no transcript",
+        "error_code": "pipeline_err_transcript_unavailable",
+        "failure_kind": "permanent",
+    }
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("permv")]),
+        patch("src.scheduler.process_youtube_video", return_value=err),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    record = src.storage._processed_caches[chat_id][make_content_id("youtube_video", "permv")]
+    assert record["status"] == "failed"
+    assert record["failure_kind"] == "permanent"
+    assert record["error_code"] == "pipeline_err_transcript_unavailable"
+    assert "retry_after" not in record
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_marks_record_transient(chat_id):
+    import src.storage
+    from src.scheduler import run_channel_check
+    from src.storage import make_content_id
+
+    err = {"error": "proxy dead", "error_code": "x", "failure_kind": "transient"}
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("transv")]),
+        patch("src.scheduler.process_youtube_video", return_value=err),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    record = src.storage._processed_caches[chat_id][make_content_id("youtube_video", "transv")]
+    assert record["failure_kind"] == "transient"
+    assert record["retry_after"]
+
+
+@pytest.mark.asyncio
+async def test_missing_failure_kind_defaults_transient(chat_id):
+    """Legacy-shaped error dicts must not blacklist permanently."""
+    import src.storage
+    from src.scheduler import run_channel_check
+    from src.storage import make_content_id
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("barev")]),
+        patch("src.scheduler.process_youtube_video", return_value={"error": "no transcript"}),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    record = src.storage._processed_caches[chat_id][make_content_id("youtube_video", "barev")]
+    assert record["failure_kind"] == "transient"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_kind_does_not_overwrite_record(chat_id):
+    """A duplicate result must never downgrade a good record to failed."""
+    import src.storage
+    from src.scheduler import run_channel_check
+    from src.storage import make_content_id, mark_processed
+
+    cid = make_content_id("youtube_video", "dupv")
+    mark_processed(chat_id, cid, status="ok")
+
+    err = {"error": "already processed", "failure_kind": "duplicate"}
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("dupv")]),
+        patch("src.scheduler.is_processed", return_value=False),  # force the gate open
+        patch("src.scheduler.process_youtube_video", return_value=err),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    assert src.storage._processed_caches[chat_id][cid]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_transient_video_retried_after_cooldown(chat_id):
+    """End-to-end: a matured transient failure flows back through the gate."""
+    from src.scheduler import run_channel_check
+
+    _seed_failed(chat_id, "retryv", kind="transient", attempts=1, retry_hours_ago=1)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("retryv")]),
+        patch("src.scheduler.process_youtube_video", return_value={"title": "T"}) as mock_proc,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    assert mock_proc.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_transient_video_not_retried_during_cooldown(chat_id):
+    from src.scheduler import run_channel_check
+
+    _seed_failed(chat_id, "coolv", kind="transient", attempts=1, retry_hours_ago=-5)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("coolv")]),
+        patch("src.scheduler.process_youtube_video", return_value={"title": "T"}) as mock_proc,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    assert mock_proc.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_permanent_video_never_retried(chat_id):
+    from src.scheduler import run_channel_check
+
+    _seed_failed(chat_id, "permv", kind="permanent", attempts=1)
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("permv")]),
+        patch("src.scheduler.process_youtube_video", return_value={"title": "T"}) as mock_proc,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    assert mock_proc.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_capped_transient_video_never_retried(chat_id):
+    """The e55e7ca guarantee: retries are bounded, not infinite."""
+    import src.storage
+    from src.scheduler import run_channel_check
+
+    _seed_failed(
+        chat_id, "doomv", kind="transient",
+        attempts=src.storage.MAX_TRANSIENT_ATTEMPTS, retry_hours_ago=100,
+    )
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("doomv")]),
+        patch("src.scheduler.process_youtube_video", return_value={"title": "T"}) as mock_proc,
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+
+    assert mock_proc.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_repeated_failures_increment_attempts(chat_id):
+    import src.storage
+    from src.scheduler import run_channel_check
+    from src.storage import make_content_id
+
+    err = {"error": "proxy dead", "failure_kind": "transient"}
+    cid = make_content_id("youtube_video", "againv")
+
+    with (
+        patch("src.scheduler.load_channels", return_value=_one_channel()),
+        patch("src.scheduler.fetch_channel_videos", return_value=[_make_video("againv")]),
+        patch("src.scheduler.process_youtube_video", return_value=err),
+        patch("src.scheduler.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await run_channel_check(chat_id)
+        assert src.storage._processed_caches[chat_id][cid]["attempts"] == 1
+
+        # Mature the cooldown so the gate lets it through again.
+        _seed_failed(chat_id, "againv", kind="transient", attempts=1, retry_hours_ago=1)
+        await run_channel_check(chat_id)
+
+    assert src.storage._processed_caches[chat_id][cid]["attempts"] == 2

@@ -93,9 +93,9 @@
 
 ---
 
-## youtube-transcript-api (>= 1.0)
+## youtube-transcript-api (>= 1.2, < 2)
 
-**Version pin:** `youtube-transcript-api>=1.0.0`.
+**Version pin:** `youtube-transcript-api>=1.2,<2`. Capped below 2.x because the failure classifier depends on the exception taxonomy — a major-version rename would silently reclassify transient failures as permanent.
 
 **Why chosen:** No official YouTube API call for captions without OAuth and without quota pain. This library scrapes the caption track that YouTube exposes to the web player.
 
@@ -109,7 +109,11 @@
 **Gotchas:**
 - **YouTube blocks data-center IPs aggressively.** A bare VPS run will fail transcript fetches within hours. Residential proxy rotation is non-optional on cloud.
 - The library renamed methods in 1.0 — if you see `youtube_transcript_api.YouTubeTranscriptApi.get_transcript(video_id)` in tutorials, that's pre-1.0 API. We use `api = YouTubeTranscriptApi(proxy_config=…)` + `api.fetch(video_id, languages=…)` which is the 1.x shape.
-- A video with no captions raises — we catch `Exception` generically because the library throws half a dozen different exception classes.
+- A video with no captions raises — we still catch `Exception` generically (the library throws a dozen different classes) but then classify with `_classify_transcript_error`.
+- **The exception hierarchy is a trap.** `TranscriptsDisabled`, `NoTranscriptFound`, `VideoUnavailable`, `VideoUnplayable`, `InvalidVideoId`, `AgeRestricted` **and** `RequestBlocked` all descend from `CouldNotRetrieveTranscript`. Branching on that base class would classify a dead proxy as "this video has no captions" and blacklist it permanently. Enumerate the permanent leaves instead; everything else defaults to transient.
+- `IpBlocked` is a **subclass of `RequestBlocked`**, so one `isinstance` check covers both.
+- Several exceptions take multiple constructor arguments — `NoTranscriptFound(video_id, languages, transcript_data)`, `VideoUnplayable(video_id, reason, sub_reasons)`. Tests instantiating them must match, or they fail with a confusing `TypeError` rather than the assertion you meant to write.
+- A dead proxy surfaces two different ways: as `requests.exceptions.ProxyError` when the gateway refuses TCP, and as `RequestBlocked` when the request lands but YouTube rejects the exit IP. Both must classify transient.
 
 ---
 

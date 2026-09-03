@@ -176,3 +176,23 @@ And defaults in stage_kwargs (`summary.get("relevance_score", 5)`) protect again
 **Enforcement:** `_validate_category` is called from `save_entry`, `stage_pending`, and `update_pending_category`. Any new code path writing per-category must route through the same helper.
 
 **Violation example:** Trusting the LLM-returned slug directly in a path join. Always validate first.
+
+---
+
+## Constraint 13: An unclassified failure is transient
+
+**Rule:** Content is blocked from reprocessing forever only when the failure is *explicitly* classified permanent. Two halves:
+
+1. **Classification defaults to transient.** [src/extractors/youtube.py](../../src/extractors/youtube.py) enumerates `_PERMANENT_TRANSCRIPT_ERRORS` (captions disabled, video gone, bad ID) and treats everything else — dead proxy, IP block, exception types nobody has seen yet — as transient. Same for [src/extractors/web.py](../../src/extractors/web.py) and for `mark_processed`, whose `failure_kind` defaults to `"transient"`.
+2. **Retry eligibility is a whitelist.** `_is_retry_eligible` in [src/storage.py](../../src/storage.py) requires `status == "failed"` **and** `failure_kind == "transient"` **and** `attempts < MAX_TRANSIENT_ATTEMPTS`. A record missing `failure_kind` can never satisfy it.
+
+**Why:** The two errors are not symmetric. Misclassifying a transient failure costs a bounded number of retries. Misclassifying a permanent one loses the content forever, silently. A week-long proxy outage once blacklisted four videos exactly this way — every failure looked identical from the pipeline's side, because `get_transcript` collapsed them all into `None`.
+
+The whitelist half is what keeps that safe in the other direction: legacy `failed` records written before the policy existed stay blocked rather than being retroactively resurrected, and `skipped` / `pending` / `ok` / `rejected` keep blocking as they always did.
+
+**Enforcement:**
+- Do not classify on `CouldNotRetrieveTranscript` — `RequestBlocked` descends from it, so a base-class check would call a dead proxy permanent. Enumerate the permanent leaves.
+- Never let a retry be unbounded: `_retry_after_for` returns `None` at the cap, and a record with no `retry_after` is blocked.
+- Callers that mean "have I seen this?" must use `has_processed_record`, not `is_processed`.
+
+**Violation example:** `except CouldNotRetrieveTranscript: kind = "permanent"`. This reproduces the original bug — a proxy outage would blacklist every video it touched.

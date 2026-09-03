@@ -78,13 +78,13 @@ pulse-bot/
 | File | Role |
 |---|---|
 | [`main.py`](../../src/main.py) | `main()` — validate env, ensure dirs, run migration once, per-user init for each allowed chat_id, schedule via `post_init`, `app.run_polling(drop_pending_updates=True)` |
-| [`config.py`](../../src/config.py) | Parses `TELEGRAM_CHAT_IDS` (supports `id:Name`), exports path helpers `user_dir / user_profile_file / user_channels_file / user_categories_file / user_processed_file / user_pending_file / user_rejected_log_file / user_knowledge_dir`, owns `load_categories` / `add_category` / `load_channels` / `save_channels` with per-user locks, configures `logger` |
+| [`config.py`](../../src/config.py) | Parses `TELEGRAM_CHAT_IDS` (supports `id:Name`), exports path helpers `user_dir / user_profile_file / user_channels_file / user_categories_file / user_processed_file / user_pending_file / user_rejected_log_file / user_knowledge_dir`, owns `load_categories` / `add_category` / `load_channels` / `save_channels` with per-user locks, configures `logger`. Retry policy knobs `MAX_TRANSIENT_ATTEMPTS` + `RETRY_BACKOFF_HOURS` (parsed by `_parse_backoff_hours`, which falls back to the default ladder rather than silently disabling retries) |
 | [`router.py`](../../src/router.py) | `SourceType` constants; `detect_source_type(url)` for youtube_video / youtube_channel / web_article; `extract_video_id(url)` handles `youtu.be/X` and `?v=X` |
-| [`pipeline.py`](../../src/pipeline.py) | Shared `_process_content()` — dedup check → extract (YouTube or web) → summarize → categorize → `stage_pending` → `mark_processed(status="pending")`. Public API: `process_youtube_video`, `process_web_article` |
+| [`pipeline.py`](../../src/pipeline.py) | Shared `_process_content()` — dedup check → extract (YouTube or web) → summarize → categorize → `stage_pending` → `mark_processed(status="pending")`. Public API: `process_youtube_video`, `process_web_article`. Error results are built by `_error()` and carry `error_code` (the stable `t()` key — callers branch on this, never on the localized prose) plus `failure_kind` (`permanent` / `transient` / `duplicate`) and an optional `failure_detail` |
 | [`scheduler.py`](../../src/scheduler.py) | `fetch_channel_videos(channel_id)` RSS parse; `run_channel_check(chat_id, app)` iterates all enabled channels, processes new videos, auto-rejects < `min_relevance`, sends per-item notification + end-of-run digest (only on non-zero activity); `setup_scheduler(app)` registers one `IntervalTrigger` job that loops all allowed users |
 | [`summarize.py`](../../src/summarize.py) | `summarize_content(chat_id, content, title, source_name, source_type, date)` — builds `LANGUAGE_DIRECTIVES[lang]` + user-context block from profile, calls OpenRouter, parses JSON, retries once on malformed output. `answer_question(chat_id, question, sources)` for `/search` follow-ups |
 | [`categorize.py`](../../src/categorize.py) | `categorize_content(chat_id, title, content)` — LLM picks a slug; `_auto_merge()` pure fuzzy-match against existing categories at 0.75 threshold (catches `ai-agent`→`ai-agents`); on malformed slug or API error, `_generate_fresh_category()` makes a second LLM call for a content-derived slug + description; safety net is a per-user `uncategorized` slug |
-| [`storage.py`](../../src/storage.py) | `init_processed(chat_id)` / `is_processed` / `mark_processed` / `make_content_id(source_type, identifier)`. `save_entry(...)` writes Markdown + `.source.txt` sibling. `_update_index(chat_id)` regenerates `_index.md`. `move_entry` re-categorizes. `search_knowledge`, `search_for_question`, `get_recent_entries`, `get_entries_in_category`, `get_stats`, `entry_id`, `find_entry_by_id`, `read_entry_markdown`, `get_source_text_path`. TTL entry cache (60 s) per user |
+| [`storage.py`](../../src/storage.py) | `init_processed(chat_id)` / `is_processed(chat_id, content_id, *, now=None, ignore_cooldown=False)` — means "is this blocked *now*", not "does a record exist"; a transient failure past its cooldown and under `MAX_TRANSIENT_ATTEMPTS` reads as unblocked. `has_processed_record(chat_id, content_id)` is the pure existence check (used by back-catalog suppression, which must not clobber a retry-eligible record). `mark_processed(..., *, failure_kind=None, error_code=None)` records classification + attempt counter on `status="failed"`; `failure_kind` defaults to `"transient"`. Helpers `_retry_after_for` / `_is_retry_eligible`. `make_content_id(source_type, identifier)`. `save_entry(...)` writes Markdown + `.source.txt` sibling. `_update_index(chat_id)` regenerates `_index.md`. `move_entry` re-categorizes. `search_knowledge`, `search_for_question`, `get_recent_entries`, `get_entries_in_category`, `get_stats`, `entry_id`, `find_entry_by_id`, `read_entry_markdown`, `get_source_text_path`. TTL entry cache (60 s) per user |
 | [`pending.py`](../../src/pending.py) | `init_pending` / `stage_pending` / `get_pending` / `list_pending` / `update_pending_category` / `commit_pending` (→ `save_entry` → `mark_processed(status="ok")`) / `reject_pending(reason)` (→ `_append_rejected_log` → `mark_processed(status="rejected")`). `read_rejected_log` for `/rejected` command |
 | [`profile.py`](../../src/profile.py) | `init_profile` / `load_profile` (safe — falls through to defaults) / `save_profile` / `profile_exists` / `get_language`. `build_relevance_context(chat_id)` merges profile + top-categories + top-topics + recent-avg + rejected titles for summarize prompt. `format_relevance_context` flattens to a prompt-ready string |
 | [`migration.py`](../../src/migration.py) | `migrate_legacy_to_admin(admin_chat_id)` — idempotent via `data/.migrated_v1` marker. Moves flat legacy files (`data/processed.json`, `channels.yml`, `knowledge/{category}/…`) into `data/users/{admin}/` + `knowledge/{admin}/`. Skips when admin namespace already has content (no silent merge) |
@@ -162,8 +162,8 @@ extractors.web ──▶ trafilatura only (no internal deps)
 
 | File | Role |
 |---|---|
-| [`extractors/youtube.py`](../../src/extractors/youtube.py) | `_load_proxy_lines()` reads + caches `proxy-credentials`. `_make_proxy_config()` / `_get_random_proxy_dict()` pick random line per call. `get_transcript(video_id)` — `YouTubeTranscriptApi(proxy_config=…).fetch()` with 3 retries + exp backoff. `get_video_metadata(video_id)` — oEmbed title + channel (upload_date always `None` — oEmbed doesn't expose it). `resolve_channel_id(url)` — normalize handle → scrape externalId regex. `get_recent_video_ids(channel_id, count)` — feedparser RSS |
-| [`extractors/web.py`](../../src/extractors/web.py) | `extract_web_article(url)` — `trafilatura.fetch_url` + `.extract(output_format='txt', include_comments=False, include_tables=True)` + `.extract_metadata()`. Rejects articles < 100 chars. Returns `{title, author, date, text, source_url, sitename}` or `None` |
+| [`extractors/youtube.py`](../../src/extractors/youtube.py) | `_load_proxy_lines()` reads + caches `proxy-credentials`. `_make_proxy_config()` / `_get_random_proxy_dict()` pick random line per call. `get_transcript(video_id, languages=None, *, failure_out=None)` — `YouTubeTranscriptApi(proxy_config=…).fetch()` with 3 retries + exp backoff. `_classify_transcript_error` splits permanent (`_PERMANENT_TRANSCRIPT_ERRORS`: captions disabled, video gone) from transient (dead proxy, IP block, **anything unrecognised**); permanent short-circuits the retry loop. The reason reaches the caller through the caller-owned `failure_out` dict — `{"kind", "code"}` — so the `str | None` return contract is untouched and it stays thread-safe under the scheduler's `asyncio.to_thread` fan-out. `get_video_metadata(video_id)` — oEmbed title + channel (upload_date always `None` — oEmbed doesn't expose it). `resolve_channel_id(url)` — normalize handle → scrape externalId regex. `get_recent_video_ids(channel_id, count)` — feedparser RSS |
+| [`extractors/web.py`](../../src/extractors/web.py) | `extract_web_article(url, *, failure_out=None)` — `trafilatura.fetch_url` + `.extract(output_format='txt', include_comments=False, include_tables=True)` + `.extract_metadata()`. Rejects articles < 100 chars. Returns `{title, author, date, text, source_url, sitename}` or `None`. Classifies via `failure_out`: download failure → transient, text < 100 chars → permanent. **Currently unreachable in production** — only the scheduler records `failed`, and it is YouTube-only |
 
 ### Cross-module edges
 
@@ -264,10 +264,42 @@ custom-slug: "User-added description"
 
 ```jsonc
 // processed.json
+// status: pending | ok | rejected | failed | skipped
+// failure_kind / error_code / attempts / retry_after appear only on "failed".
 {
   "yt:dQw4w9WgXcQ": { "status": "ok",        "processed_at": "2026-04-19T10:12:03+00:00" },
   "yt:abc123":      { "status": "rejected",  "processed_at": "2026-04-19T10:13:45+00:00" },
-  "web:a1b2c3d4e5f6…": { "status": "pending","processed_at": "2026-04-19T10:15:00+00:00" }
+  "web:a1b2c3d4e5f6…": { "status": "pending","processed_at": "2026-04-19T10:15:00+00:00" },
+
+  // Back-catalog suppression after a channel is added — permanent by design.
+  "yt:backcat9":    { "status": "skipped",   "processed_at": "2026-04-20T08:00:00+00:00" },
+
+  // Captions disabled: never retried.
+  "yt:nocaps01": {
+    "status": "failed", "processed_at": "2026-05-20T09:00:00+00:00",
+    "failure_kind": "permanent",
+    "error_code": "pipeline_err_transcript_unavailable",
+    "attempts": 1
+  },
+
+  // Dead proxy: retried once the cooldown elapses.
+  "yt:proxydown": {
+    "status": "failed", "processed_at": "2026-05-20T09:00:03+00:00",
+    "failure_kind": "transient",
+    "error_code": "pipeline_err_transcript_unavailable",
+    "attempts": 2,
+    "retry_after": "2026-05-20T16:00:03+00:00"
+  },
+
+  // Cap reached — no retry_after, blocked for good.
+  "yt:gaveup42": {
+    "status": "failed", "processed_at": "2026-05-28T04:00:00+00:00",
+    "failure_kind": "transient", "attempts": 5
+  },
+
+  // Legacy record written before the retry policy existed. No failure_kind,
+  // so it stays blocked forever — retry eligibility is a whitelist.
+  "yt:oldfail1":    { "status": "failed",    "processed_at": "2026-05-08T02:11:00+00:00" }
 }
 ```
 

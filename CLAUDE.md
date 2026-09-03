@@ -15,7 +15,8 @@ Self-hosted Telegram bot that builds a personal, multi-tenant knowledge base by 
 - **Proxies:** rotating residential (proxy-cheap.com) via file-backed credentials, random pick per request
 - **Storage:** Markdown files + `.source.txt` siblings in `knowledge/{chat_id}/…`; state in JSON / YAML under `data/users/{chat_id}/`
 - **Tests:** pytest + pytest-asyncio + pytest-cov; 85 % coverage gate
-- **Deploy:** Docker (Python 3.11-slim) on Hetzner CAX21 (ARM64); CI via GitHub Actions → SSH + SCP
+- **Deploy:** Docker (Python 3.11-slim) on Hetzner CAX21 (ARM64); CI via GitHub Actions → SSH + SCP (deploy only — it does not run tests)
+- **Retry policy:** `MAX_TRANSIENT_ATTEMPTS` (default 5) + `RETRY_BACKOFF_HOURS` (default `1,6,24,168`) — how often a transient processing failure is retried before it is blocked for good
 
 ## Architecture rules (non-negotiable)
 
@@ -30,6 +31,7 @@ Self-hosted Telegram bot that builds a personal, multi-tenant knowledge base by 
 9. **LLM output is validated before staging.** Relevance ∈ [1,10], non-empty bullets. See [src/pipeline.py:86](src/pipeline.py#L86).
 10. **Proxy credentials are read-only in the container.** Mounted `:ro`. See [docker-compose.yml:12](docker-compose.yml#L12).
 11. **Secrets via env vars only.** Never committed; `.env.example` shows the shape.
+12. **An unclassified failure is transient.** Only the enumerated permanent errors block content forever; everything else gets bounded retries. A misclassified transient costs a few retries, a misclassified permanent loses the content. Retry eligibility is a whitelist — a `failed` record without `failure_kind` stays blocked. See [src/extractors/youtube.py](src/extractors/youtube.py) `_PERMANENT_TRANSCRIPT_ERRORS` and [src/storage.py](src/storage.py) `_is_retry_eligible`.
 
 ## Modules
 
@@ -115,7 +117,7 @@ git push origin main
 ## Testing methodology
 
 - **Style:** integration-first with heavy use of fakes for external I/O (LLM, HTTP, Telegram). Pure logic modules (`router`, `categorize._auto_merge`, `onboarding`) have narrow unit tests.
-- **Coverage gate:** ≥ 85 % enforced by [pyproject.toml:4](pyproject.toml#L4); CI fails otherwise.
+- **Coverage gate:** ≥ 85 % enforced by [pyproject.toml:4](pyproject.toml#L4) addopts. **This is local-only** — [.github/workflows/deploy.yml](.github/workflows/deploy.yml) is the sole workflow and it runs scp + `docker compose build`, never `pytest`. Nothing stops a coverage regression from reaching production, so run `pytest` before every push.
 - **Test location:** co-located as `tests/test_<module>.py`; one file per `src/` module + cross-cutting `test_multi_user.py`, `test_integration.py`.
 - **Runner:** `pytest` with `asyncio_mode = "auto"`.
 - **What to mock:** OpenRouter client, `youtube-transcript-api`, `requests.get`, `feedparser.parse`, Telegram `app.bot.send_message`.
@@ -131,7 +133,7 @@ Under `data/users/{chat_id}/`:
 | `profile.yaml` | language, persona, skill_level, known_stack[], actively_learning[], already_comfortable_with[], not_interested_in[] | onboarding, `/language` | summarize (relevance context) |
 | `channels.yml` | `{channels: [{name, id, category, enabled, min_relevance?}]}` | `/add`, `/remove`, wizard | scheduler |
 | `categories.yml` | `{slug: description}`, per-user only — no shared defaults | onboarding wizard, `/add`, auto-add on LLM-proposed new category | categorize, `/categories` |
-| `processed.json` | `{content_id: {status: pending|ok|rejected, processed_at}}` | pipeline, pending | dedup checks |
+| `processed.json` | `{content_id: {status: pending\|ok\|rejected\|failed\|skipped, processed_at, failure_kind?, error_code?, attempts?, retry_after?}}` — the last four appear only on `failed`. A `failed` record with **no** `failure_kind` is legacy and blocks permanently | pipeline, pending, scheduler, `/add` back-catalog | dedup + retry checks |
 | `pending.json` | `{pending_id: {content_id, title, summary_bullets, …}}` | pipeline (stage), approve/reject | `/pending`, scheduler auto-reject |
 | `rejected_log.jsonl` | one JSON record per reject | pending.reject_pending | `/rejected` |
 
@@ -147,13 +149,17 @@ Every external call has a defined failure mode. The bot never crashes.
 
 | Scenario | Code location | Outcome |
 |---|---|---|
-| No transcript after 3 attempts | [src/extractors/youtube.py:71](src/extractors/youtube.py#L71) | Return `None` → pipeline returns `{"error": …}` → caller notifies user in their language |
-| oEmbed metadata fails | [src/extractors/youtube.py:87](src/extractors/youtube.py#L87) | Fall through to `{"title": None, …}`; pipeline uses `f"Video {video_id}"` |
-| Trafilatura returns < 100 chars | [src/extractors/web.py:33](src/extractors/web.py#L33) | Return `None` → pipeline errors out with `pipeline_err_web_extract_failed` |
-| LLM returns malformed JSON | [src/summarize.py:213](src/summarize.py#L213) | Retry once; on second failure return `None` → pipeline aborts the item |
-| OpenRouter API error | [src/summarize.py:218](src/summarize.py#L218) | Retry once; on second failure return `None` |
-| Category slug outside alnum + dash | [src/categorize.py:88](src/categorize.py#L88) | Default to `ai-news`, log warning |
-| Duplicate content | [src/pipeline.py:43](src/pipeline.py#L43) | Return `pipeline_err_*_already_processed` — localized message |
+| Transcript fails — captions disabled / video gone (`TranscriptsDisabled`, `NoTranscriptFound`, `VideoUnavailable`, `VideoUnplayable`, `InvalidVideoId`, `AgeRestricted`) | [src/extractors/youtube.py](src/extractors/youtube.py) `_PERMANENT_TRANSCRIPT_ERRORS` | Classified **permanent**; skips the remaining retries; recorded as `failed`/`permanent` and never retried |
+| Transcript fails — dead proxy, IP block, anything unrecognised | [src/extractors/youtube.py](src/extractors/youtube.py) `_classify_transcript_error` | Classified **transient** (the default); 3 in-call attempts, then recorded as `failed`/`transient` and retried after a cooldown |
+| oEmbed metadata fails | [src/extractors/youtube.py](src/extractors/youtube.py) `get_video_metadata` | Fall through to `{"title": None, …}`; pipeline uses `f"Video {video_id}"` |
+| Trafilatura returns < 100 chars | [src/extractors/web.py](src/extractors/web.py) | **Permanent** (paywall / JS-only page) → `pipeline_err_web_extract_failed` |
+| Trafilatura download fails | [src/extractors/web.py](src/extractors/web.py) | **Transient** (network is the dominant cause) |
+| LLM returns malformed JSON | [src/summarize.py](src/summarize.py) | Retry once; on second failure return `None` → **transient** pipeline failure |
+| OpenRouter API error | [src/summarize.py](src/summarize.py) | Retry once; on second failure return `None` → **transient** |
+| Transient failure under the attempt cap | [src/storage.py](src/storage.py) `_is_retry_eligible` | Blocked until `retry_after`, then the scheduler's normal gate lets it through again |
+| Transient failure at `MAX_TRANSIENT_ATTEMPTS` | [src/storage.py](src/storage.py) `_retry_after_for` | No `retry_after` written → blocked for good |
+| Category slug outside alnum + dash | [src/categorize.py](src/categorize.py) | Default to `ai-news`, log warning |
+| Duplicate content | [src/pipeline.py](src/pipeline.py) | Return `pipeline_err_*_already_processed` with `failure_kind="duplicate"` — the scheduler leaves the existing record untouched |
 | Telegram send fails in scheduler | [src/scheduler.py:115](src/scheduler.py#L115) | Log warning; scheduler cycle continues |
 | Scheduler raises for one user | [src/scheduler.py:196](src/scheduler.py#L196) | Log error; loop continues to next `chat_id` |
 | Proxy file missing | [src/extractors/youtube.py:30](src/extractors/youtube.py#L30) | Warn once; fall back to direct requests |

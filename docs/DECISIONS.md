@@ -173,6 +173,44 @@ Scheduler has an additional auto-reject path: entries below `min_relevance` neve
 
 ---
 
+## ADR-007: Failures are classified permanent vs transient, with bounded retries (2026-09-03)
+
+**Status:** Accepted
+
+**Context:** A residential-proxy outage lasted a week. Every transcript fetch failed with `ProxyError`, and commit `e55e7ca` ("Mark failed videos as processed so scheduler stops retrying them") faithfully recorded each one as `status="failed"`. Because `is_processed` tested key membership only — `return content_id in cache` — a `failed` record blocked content exactly as hard as `ok`. Four videos were permanently blacklisted over an infrastructure problem that fixed itself the moment the proxy came back.
+
+`e55e7ca`'s intent was correct: without it the scheduler re-attempted an unprocessable video every 30 minutes forever. The flaw was that it could not tell "this video has no captions" from "our proxy is down" — because `get_transcript` collapsed every exception into `None`, so by the time the pipeline saw the failure the reason was already gone.
+
+**Decision:**
+- Classify at the extractor boundary, where the exception is still in hand. [src/extractors/youtube.py](../src/extractors/youtube.py) enumerates `_PERMANENT_TRANSCRIPT_ERRORS` and treats everything else as transient; [src/extractors/web.py](../src/extractors/web.py) mirrors it.
+- Propagate the reason through a caller-owned `failure_out` dict, leaving the `str | None` return contract untouched.
+- Give pipeline error results a machine-readable `error_code` (the `t()` key) and a `failure_kind`, so nothing downstream ever parses a localized string.
+- `is_processed` now means "is this blocked *now*", with `now` injected for testability. `has_processed_record` keeps the old existence semantics for back-catalog suppression.
+- Retry eligibility is a whitelist: `status == "failed"` **and** `failure_kind == "transient"` **and** `attempts < MAX_TRANSIENT_ATTEMPTS` **and** the cooldown has elapsed. Cooldowns come from `RETRY_BACKOFF_HOURS` (default `1,6,24,168` — a horizon of ~8 days, chosen to outlast the observed 7-day outage).
+- No new retry machinery. The scheduler's existing per-cycle gate is the retry mechanism; the cooldown is expressed purely as data in the record that gate already reads.
+
+**Consequences:**
+- (+) Transient outages self-heal with no operator action. A proxy blip costs a delay, not the content.
+- (+) `e55e7ca`'s guarantee survives intact — retries are bounded by the attempt cap, and a permanent failure is not retried even once.
+- (+) An OpenRouter blip no longer blacklists a video either; `pipeline_err_summarize_failed` was the second-largest source of the same bug.
+- (+) Zero new user-facing strings, zero new commands, no migration, no new state file. `/run` already serves as the manual trigger once a cooldown elapses.
+- (+) Permanent errors short-circuit the in-call retry loop, saving two proxy requests and 3 s of sleep per captionless video.
+- (−) The retry horizon is capped by the RSS window: `fetch_channel_videos` sees only a channel's newest 10 entries, so a video that ages out before its cooldown expires is never retried. The ladder must be sized against posting frequency.
+- (−) `is_processed` is now time-dependent, so tests must inject `now` rather than assume a static answer.
+- (−) Legacy `failed` records stay blocked forever. Deliberate, and the explicit user decision — production data was not to be touched.
+- (−) `failure_out` is a mutable out-parameter, a mild code smell, accepted for the reasons under Alternatives.
+
+**Alternatives considered:**
+- **Change `get_transcript`'s return type to a tuple/NamedTuple** — cleanest API, but breaks 14 `patch(..., return_value=…)` sites across `test_pipeline.py` and `test_integration.py`, including tests guarding the behaviour being changed.
+- **Add a parallel `get_transcript_result()`** — worse: existing `patch("src.pipeline.get_transcript")` calls become inert, so a test would make a real network call instead of failing loudly.
+- **Module-level "last error" global** — races under the scheduler's `asyncio.gather` → `asyncio.to_thread` fan-out across users.
+- **Branch on `CouldNotRetrieveTranscript`** — `RequestBlocked` descends from it, so this would classify a dead proxy as permanent and reproduce the exact bug.
+- **Parse the localized error string** — rejected outright; the prose is rendered in ten languages.
+- **A `/retry` command** — every command costs 10 translations, and `/run` already covers the manual case.
+- **Migrate production `processed.json` to unblock the four stuck videos** — user declined touching production data.
+
+---
+
 ## ADR template (copy for new entries)
 
 ```markdown

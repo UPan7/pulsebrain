@@ -67,6 +67,169 @@ def test_get_transcript_none_after_all_retries():
         assert instance.fetch.call_count == 3
 
 
+# ── Failure classification (permanent vs transient) ────────────────────────
+
+
+def test_transcript_permanent_error_short_circuits():
+    """No captions means no retry — don't burn proxy traffic on it."""
+    from youtube_transcript_api import TranscriptsDisabled
+
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep") as mock_sleep,
+    ):
+        MockApi.return_value.fetch.side_effect = TranscriptsDisabled("vid")
+
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+        assert MockApi.return_value.fetch.call_count == 1
+        assert mock_sleep.call_count == 0
+    assert sink == {"kind": "permanent", "code": "TranscriptsDisabled"}
+
+
+def test_transcript_transient_error_retries_then_reports():
+    from youtube_transcript_api import RequestBlocked
+
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = RequestBlocked("vid")
+
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+        assert MockApi.return_value.fetch.call_count == 3
+    assert sink == {"kind": "transient", "code": "RequestBlocked"}
+
+
+def test_ip_blocked_classified_transient():
+    """IpBlocked subclasses RequestBlocked — relied on, not accidental."""
+    from youtube_transcript_api import IpBlocked
+
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = IpBlocked("vid")
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+    assert sink["kind"] == "transient"
+
+
+def test_proxy_error_classified_transient():
+    """The exact shape of the outage that motivated this: a dead proxy."""
+    import requests
+
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = requests.exceptions.ProxyError(
+            "Unable to connect to proxy"
+        )
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+    assert sink == {"kind": "transient", "code": "ProxyError"}
+
+
+def test_unknown_exception_defaults_transient():
+    """Pins the single most important default in the classifier."""
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = RuntimeError("???")
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+    assert sink == {"kind": "transient", "code": "RuntimeError"}
+
+
+@pytest.mark.parametrize(
+    "exc_name, args",
+    [
+        ("VideoUnavailable", ("vid",)),
+        ("InvalidVideoId", ("vid",)),
+        ("AgeRestricted", ("vid",)),
+    ],
+)
+def test_permanent_error_family_classified_permanent(exc_name, args):
+    import youtube_transcript_api
+
+    from src.extractors.youtube import get_transcript
+
+    exc_cls = getattr(youtube_transcript_api, exc_name)
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = exc_cls(*args)
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+        assert MockApi.return_value.fetch.call_count == 1
+    assert sink == {"kind": "permanent", "code": exc_name}
+
+
+def test_no_transcript_found_classified_permanent():
+    from youtube_transcript_api import NoTranscriptFound
+
+    from src.extractors.youtube import get_transcript
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = NoTranscriptFound("vid", ["en"], MagicMock())
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+    assert sink["kind"] == "permanent"
+
+
+def test_empty_transcript_classified_permanent():
+    from src.extractors.youtube import get_transcript
+
+    blank = MagicMock()
+    blank.text = "   "
+    sink: dict[str, str] = {}
+    with patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi:
+        MockApi.return_value.fetch.return_value = [blank]
+        assert get_transcript("vid", languages=["en"], failure_out=sink) is None
+    assert sink == {"kind": "permanent", "code": "EmptyTranscript"}
+
+
+def test_failure_out_untouched_on_success():
+    from src.extractors.youtube import get_transcript
+
+    snippet = MagicMock()
+    snippet.text = "hello"
+    sink: dict[str, str] = {}
+    with patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi:
+        MockApi.return_value.fetch.return_value = [snippet]
+        assert get_transcript("vid", languages=["en"], failure_out=sink) == "hello"
+    assert sink == {}
+
+
+def test_get_transcript_without_failure_out_still_works():
+    """Back-compat for the many call sites that patch get_transcript."""
+    from src.extractors.youtube import get_transcript
+
+    with (
+        patch("src.extractors.youtube.YouTubeTranscriptApi") as MockApi,
+        patch("src.extractors.youtube.time.sleep"),
+    ):
+        MockApi.return_value.fetch.side_effect = RuntimeError("boom")
+        assert get_transcript("vid", languages=["en"]) is None
+
+
 def test_get_video_metadata_success():
     """oEmbed returns title + channel."""
     from src.extractors.youtube import get_video_metadata

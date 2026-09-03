@@ -3,7 +3,10 @@ python-telegram-bot>=21.0
 apscheduler>=3.10.0
 feedparser>=6.0.0
 pyyaml>=6.0
-youtube-transcript-api>=1.0.0
+# Pinned below 2.x: the failure classifier in extractors/youtube.py depends
+# on the exception taxonomy (TranscriptsDisabled, RequestBlocked and the
+# IpBlocked-subclasses-RequestBlocked relationship).
+youtube-transcript-api>=1.2,<2
 requests>=2.31.0
 python-slugify>=8.0.0
 trafilatura>=2.0.0

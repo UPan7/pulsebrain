@@ -9,7 +9,15 @@ import time
 
 import feedparser
 import requests
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import (
+    AgeRestricted,
+    InvalidVideoId,
+    NoTranscriptFound,
+    TranscriptsDisabled,
+    VideoUnavailable,
+    VideoUnplayable,
+    YouTubeTranscriptApi,
+)
 from youtube_transcript_api.proxies import GenericProxyConfig
 
 from src.config import PROXY_CREDENTIALS_FILE, TRANSCRIPT_LANGUAGES
@@ -59,11 +67,57 @@ def _get_random_proxy_dict() -> dict[str, str] | None:
 
 _MAX_RETRIES = 3
 
+# Exceptions meaning "this video will never yield a transcript for us".
+# Everything else — RequestBlocked, IpBlocked (a RequestBlocked subclass),
+# YouTubeRequestFailed, PoTokenRequired, requests' ProxyError /
+# ConnectTimeout / ReadTimeout / ConnectionError, and any exception type we
+# have never seen — is treated as transient.
+#
+# Note that most permanent errors and RequestBlocked share the same base
+# class, CouldNotRetrieveTranscript, so classifying on that base would call
+# a dead proxy "permanent" and blacklist the video forever. Enumerate the
+# permanent leaves instead.
+#
+# Defaulting the unknown to transient is the most important choice here: a
+# misclassified transient failure costs a bounded number of retries, while a
+# misclassified permanent one blacklists real content forever.
+_PERMANENT_TRANSCRIPT_ERRORS: tuple[type[BaseException], ...] = (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+    VideoUnplayable,
+    InvalidVideoId,
+    AgeRestricted,
+)
 
-def get_transcript(video_id: str, languages: list[str] | None = None) -> str | None:
+
+def _classify_transcript_error(exc: BaseException) -> tuple[str, str]:
+    """Map a transcript exception to ``(failure_kind, error_code)``.
+
+    The code is the exception class name — stable, machine-readable, and
+    needing no lookup table to keep in sync with the library.
+    """
+    kind = "permanent" if isinstance(exc, _PERMANENT_TRANSCRIPT_ERRORS) else "transient"
+    return kind, type(exc).__name__
+
+
+def get_transcript(
+    video_id: str,
+    languages: list[str] | None = None,
+    *,
+    failure_out: dict[str, str] | None = None,
+) -> str | None:
     """Fetch transcript for a YouTube video via youtube-transcript-api.
 
-    Uses rotating residential proxies with retries on failure.
+    Uses rotating residential proxies with retries on failure. Returns the
+    text, or ``None`` when it could not be fetched — this never raises.
+
+    *failure_out*, when supplied, is a caller-owned dict that receives
+    ``{"kind": "permanent"|"transient", "code": "<ExceptionClassName>"}``.
+    That is how the reason escapes without changing the ``str | None``
+    return contract every existing caller and test depends on. It is a
+    caller-owned dict rather than a module global because the scheduler fans
+    this call out across users via ``asyncio.to_thread``.
     """
     if languages is None:
         languages = TRANSCRIPT_LANGUAGES
@@ -74,11 +128,33 @@ def get_transcript(video_id: str, languages: list[str] | None = None) -> str | N
         try:
             transcript = api.fetch(video_id, languages=languages)
             text = " ".join(snippet.text for snippet in transcript)
-            return text if text.strip() else None
+            if text.strip():
+                return text
+            # The fetch succeeded but the transcript is empty; it will not
+            # fill in later.
+            if failure_out is not None:
+                failure_out.update(kind="permanent", code="EmptyTranscript")
+            return None
         except Exception as exc:
-            logger.debug("Transcript attempt %d/%d failed for %s: %s", attempt, _MAX_RETRIES, video_id, exc)
+            kind, code = _classify_transcript_error(exc)
+            logger.debug(
+                "Transcript attempt %d/%d failed for %s (%s/%s): %s",
+                attempt, _MAX_RETRIES, video_id, kind, code, exc,
+            )
+            if kind == "permanent":
+                # No point burning two more proxy requests and 3s of sleep
+                # on a video that has no captions.
+                logger.warning("No transcript for %s — permanent (%s)", video_id, code)
+                if failure_out is not None:
+                    failure_out.update(kind=kind, code=code)
+                return None
             if attempt == _MAX_RETRIES:
-                logger.warning("No transcript available for %s after %d attempts: %s", video_id, _MAX_RETRIES, exc)
+                logger.warning(
+                    "No transcript available for %s after %d attempts (%s/%s): %s",
+                    video_id, _MAX_RETRIES, kind, code, exc,
+                )
+                if failure_out is not None:
+                    failure_out.update(kind=kind, code=code)
                 return None
             # Exponential backoff: 1s, 2s
             time.sleep(2 ** (attempt - 1))

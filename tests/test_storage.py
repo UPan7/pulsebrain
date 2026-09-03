@@ -88,6 +88,381 @@ def test_processed_survives_corrupt_json(tmp_knowledge_dir, chat_id):
     assert is_processed(chat_id, "yt:anything") is False
 
 
+# ── Failure classification & bounded retries ───────────────────────────────
+
+
+def _far_future():
+    from datetime import datetime, timedelta, timezone
+
+    return datetime.now(timezone.utc) + timedelta(days=365)
+
+
+def _hours_ahead(hours: int):
+    from datetime import datetime, timedelta, timezone
+
+    return datetime.now(timezone.utc) + timedelta(hours=hours)
+
+
+def test_mark_failed_permanent_records_kind(tmp_knowledge_dir, chat_id):
+    import src.storage
+    from src.storage import init_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:nocaps", status="failed", failure_kind="permanent")
+
+    record = src.storage._processed_caches[chat_id]["yt:nocaps"]
+    assert record["failure_kind"] == "permanent"
+    assert record["attempts"] == 1
+    assert "retry_after" not in record
+
+
+def test_mark_failed_transient_sets_retry_after(tmp_knowledge_dir, chat_id):
+    from datetime import datetime
+
+    import src.storage
+    from src.storage import init_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    record = src.storage._processed_caches[chat_id]["yt:proxy"]
+    assert record["attempts"] == 1
+    delta = datetime.fromisoformat(record["retry_after"]) - datetime.fromisoformat(
+        record["processed_at"]
+    )
+    assert 3500 < delta.total_seconds() < 3700  # ~1h, the first rung
+
+
+def test_permanent_failure_never_retried(tmp_knowledge_dir, chat_id):
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:nocaps", status="failed", failure_kind="permanent")
+
+    assert is_processed(chat_id, "yt:nocaps", now=_far_future()) is True
+
+
+def test_transient_failure_blocked_during_cooldown(tmp_knowledge_dir, chat_id):
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    assert is_processed(chat_id, "yt:proxy") is True
+
+
+def test_transient_failure_eligible_after_cooldown(tmp_knowledge_dir, chat_id):
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    assert is_processed(chat_id, "yt:proxy", now=_hours_ahead(2)) is False
+
+
+def test_transient_attempts_increment_and_cap(tmp_knowledge_dir, chat_id):
+    import src.storage
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    for _ in range(src.storage.MAX_TRANSIENT_ATTEMPTS):
+        mark_processed(chat_id, "yt:doomed", status="failed", failure_kind="transient")
+
+    record = src.storage._processed_caches[chat_id]["yt:doomed"]
+    assert record["attempts"] == src.storage.MAX_TRANSIENT_ATTEMPTS
+    assert "retry_after" not in record
+    assert is_processed(chat_id, "yt:doomed", now=_far_future()) is True
+
+
+def test_transient_backoff_grows(tmp_knowledge_dir, chat_id, monkeypatch):
+    """Second failure waits longer than the first.
+
+    Patches src.storage, not src.config — the constants are bound by value
+    at import time.
+    """
+    from datetime import datetime
+
+    import src.storage
+    from src.storage import init_processed, mark_processed
+
+    monkeypatch.setattr(src.storage, "RETRY_BACKOFF_HOURS", (1, 6))
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:slow", status="failed", failure_kind="transient")
+    mark_processed(chat_id, "yt:slow", status="failed", failure_kind="transient")
+
+    record = src.storage._processed_caches[chat_id]["yt:slow"]
+    assert record["attempts"] == 2
+    delta = datetime.fromisoformat(record["retry_after"]) - datetime.fromisoformat(
+        record["processed_at"]
+    )
+    assert 21000 < delta.total_seconds() < 21900  # ~6h, the second rung
+
+
+def test_ignore_cooldown_bypasses_wait_not_cap(tmp_knowledge_dir, chat_id):
+    import src.storage
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:manual", status="failed", failure_kind="transient")
+    assert is_processed(chat_id, "yt:manual", ignore_cooldown=True) is False
+
+    for _ in range(src.storage.MAX_TRANSIENT_ATTEMPTS - 1):
+        mark_processed(chat_id, "yt:manual", status="failed", failure_kind="transient")
+    assert is_processed(chat_id, "yt:manual", ignore_cooldown=True) is True
+
+
+def test_legacy_failed_record_stays_blocked(tmp_knowledge_dir, chat_id):
+    """A pre-feature 'failed' record has no failure_kind and must stay blocked.
+
+    This is the core guarantee that production failures recorded before the
+    retry policy existed are not retroactively unblocked.
+    """
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps(
+            {"yt:legacy": {"status": "failed", "processed_at": "2026-05-08T02:11:00+00:00"}}
+        ),
+        encoding="utf-8",
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:legacy", now=_far_future()) is True
+    assert is_processed(chat_id, "yt:legacy", ignore_cooldown=True) is True
+
+
+def test_legacy_failed_record_with_null_kind_stays_blocked(tmp_knowledge_dir, chat_id):
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps(
+            {
+                "yt:legacy": {
+                    "status": "failed",
+                    "processed_at": "2026-05-08T02:11:00+00:00",
+                    "failure_kind": None,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:legacy", now=_far_future()) is True
+
+
+def test_corrupt_record_is_blocked_not_crash(tmp_knowledge_dir, chat_id):
+    """A hand-edited processed.json must not take the scheduler down."""
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps({"yt:broken": "failed"}), encoding="utf-8"
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:broken", now=_far_future()) is True
+
+
+def test_transient_record_with_unparseable_retry_after_is_blocked(
+    tmp_knowledge_dir, chat_id
+):
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps(
+            {
+                "yt:garbled": {
+                    "status": "failed",
+                    "processed_at": "2026-05-08T02:11:00+00:00",
+                    "failure_kind": "transient",
+                    "attempts": 1,
+                    "retry_after": "not-a-timestamp",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:garbled", now=_far_future()) is True
+
+
+def test_transient_record_without_retry_after_is_blocked(tmp_knowledge_dir, chat_id):
+    """Under the cap but with no cooldown recorded — block rather than guess."""
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps(
+            {
+                "yt:noretry": {
+                    "status": "failed",
+                    "processed_at": "2026-05-08T02:11:00+00:00",
+                    "failure_kind": "transient",
+                    "attempts": 1,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:noretry", now=_far_future()) is True
+    # ...but an explicit manual override still gets through.
+    assert is_processed(chat_id, "yt:noretry", ignore_cooldown=True) is False
+
+
+def test_naive_retry_after_treated_as_utc(tmp_knowledge_dir, chat_id):
+    """A hand-written timestamp without a timezone must not raise."""
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import init_processed, is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps(
+            {
+                "yt:naive": {
+                    "status": "failed",
+                    "processed_at": "2026-05-08T02:11:00+00:00",
+                    "failure_kind": "transient",
+                    "attempts": 1,
+                    "retry_after": "2026-05-08T03:11:00",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    init_processed(chat_id)
+    assert is_processed(chat_id, "yt:naive", now=_far_future()) is False
+
+
+def test_skipped_status_never_retryable(tmp_knowledge_dir, chat_id):
+    """Back-catalog suppression must stay permanent."""
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:backcat", status="skipped")
+
+    assert is_processed(chat_id, "yt:backcat", now=_far_future()) is True
+
+
+@pytest.mark.parametrize("status", ["pending", "ok", "rejected"])
+def test_non_failed_statuses_never_retryable(tmp_knowledge_dir, chat_id, status):
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:x", status=status)
+
+    assert is_processed(chat_id, "yt:x", now=_far_future()) is True
+
+
+def test_successful_mark_resets_failure_fields(tmp_knowledge_dir, chat_id):
+    import src.storage
+    from src.storage import init_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:recovers", status="failed", failure_kind="transient")
+    mark_processed(chat_id, "yt:recovers", status="failed", failure_kind="transient")
+    mark_processed(chat_id, "yt:recovers")
+
+    record = src.storage._processed_caches[chat_id]["yt:recovers"]
+    assert set(record) == {"status", "processed_at"}
+    assert record["status"] == "ok"
+
+
+def test_error_code_recorded_when_supplied(tmp_knowledge_dir, chat_id):
+    import src.storage
+    from src.storage import init_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(
+        chat_id,
+        "yt:coded",
+        status="failed",
+        failure_kind="transient",
+        error_code="pipeline_err_transcript_unavailable",
+    )
+
+    record = src.storage._processed_caches[chat_id]["yt:coded"]
+    assert record["error_code"] == "pipeline_err_transcript_unavailable"
+
+
+def test_has_processed_record_true_for_retry_eligible(tmp_knowledge_dir, chat_id):
+    """Existence and blocked-ness diverge once a cooldown elapses."""
+    from src.storage import (
+        has_processed_record,
+        init_processed,
+        is_processed,
+        mark_processed,
+    )
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    assert is_processed(chat_id, "yt:proxy", now=_hours_ahead(2)) is False
+    assert has_processed_record(chat_id, "yt:proxy") is True
+
+
+def test_has_processed_record_false_for_unknown(tmp_knowledge_dir, chat_id):
+    from src.storage import has_processed_record, init_processed
+
+    init_processed(chat_id)
+    assert has_processed_record(chat_id, "yt:nope") is False
+
+
+def test_is_processed_populates_cache_on_cold_read(tmp_knowledge_dir, chat_id):
+    """Cold reads used to re-parse the file on every call and discard it."""
+    import src.storage
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import is_processed
+
+    ensure_user_dirs(chat_id)
+    user_processed_file(chat_id).write_text(
+        json.dumps({"yt:cold": {"status": "ok"}}), encoding="utf-8"
+    )
+
+    assert chat_id not in src.storage._processed_caches
+    assert is_processed(chat_id, "yt:cold") is True
+    assert chat_id in src.storage._processed_caches
+
+
+def test_retry_after_written_to_disk_atomically(tmp_knowledge_dir, chat_id):
+    from src.config import user_processed_file
+    from src.storage import init_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    processed_file = user_processed_file(chat_id)
+    data = json.loads(processed_file.read_text("utf-8"))
+    assert data["yt:proxy"]["retry_after"]
+    assert data["yt:proxy"]["failure_kind"] == "transient"
+    assert not processed_file.with_suffix(".tmp").exists()
+
+
+def test_unclassified_failure_defaults_transient(tmp_knowledge_dir, chat_id):
+    """An unclassified failure must never become a permanent blacklist."""
+    import src.storage
+    from src.storage import init_processed, is_processed, mark_processed
+
+    init_processed(chat_id)
+    mark_processed(chat_id, "yt:unknown", status="failed")
+
+    assert src.storage._processed_caches[chat_id]["yt:unknown"]["failure_kind"] == "transient"
+    assert is_processed(chat_id, "yt:unknown", now=_hours_ahead(2)) is False
+
+
 # ── Content ID generation ──────────────────────────────────────────────────
 
 

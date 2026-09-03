@@ -26,7 +26,13 @@ from typing import Any
 
 from slugify import slugify
 
-from src.config import KNOWLEDGE_DIR, user_knowledge_dir, user_processed_file
+from src.config import (
+    KNOWLEDGE_DIR,
+    MAX_TRANSIENT_ATTEMPTS,
+    RETRY_BACKOFF_HOURS,
+    user_knowledge_dir,
+    user_processed_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,32 +75,173 @@ def _flush_processed(chat_id: int) -> None:
     os.replace(tmp_path, path)
 
 
+def _ensure_processed_cache(chat_id: int) -> dict[str, Any]:
+    """Return this user's cache, loading from disk on first touch.
+
+    Caller must hold the per-user lock. Mirrors :func:`pending._ensure_cache`
+    so the read and write paths share one population policy — previously
+    :func:`is_processed` re-read the file on *every* call for a chat_id that
+    had never been through :func:`init_processed`, while
+    :func:`mark_processed` populated the cache.
+    """
+    cache = _processed_caches.get(chat_id)
+    if cache is None:
+        cache = _load_processed_from_disk(chat_id)
+        _processed_caches[chat_id] = cache
+    return cache
+
+
 def init_processed(chat_id: int) -> None:
     """Load a user's processed.json into memory. Call once per chat_id at startup."""
     with _processed_lock_for(chat_id):
         _processed_caches[chat_id] = _load_processed_from_disk(chat_id)
 
 
-def is_processed(chat_id: int, content_id: str) -> bool:
-    """True if ``content_id`` has already been processed for ``chat_id``."""
-    with _processed_lock_for(chat_id):
-        cache = _processed_caches.get(chat_id)
-        if cache is None:
-            return content_id in _load_processed_from_disk(chat_id)
-        return content_id in cache
+def _retry_after_for(attempts: int) -> str | None:
+    """ISO timestamp at which a transient failure becomes retryable.
+
+    *attempts* counts failures including the one being recorded. Returns
+    ``None`` once the cap is reached — the item is then blocked for good,
+    which is what preserves the "stop retrying forever" guarantee. A ladder
+    shorter than the cap repeats its last delay.
+    """
+    if attempts >= MAX_TRANSIENT_ATTEMPTS or not RETRY_BACKOFF_HOURS:
+        return None
+    idx = min(attempts - 1, len(RETRY_BACKOFF_HOURS) - 1)
+    due = datetime.now(timezone.utc) + timedelta(hours=RETRY_BACKOFF_HOURS[idx])
+    return due.isoformat()
 
 
-def mark_processed(chat_id: int, content_id: str, status: str = "ok") -> None:
-    """Mark ``content_id`` as processed for ``chat_id`` and flush atomically."""
+def _is_retry_eligible(record: Any, now: datetime, ignore_cooldown: bool) -> bool:
+    """True when a processed.json record may be reprocessed.
+
+    Eligibility is opt-in by construction: the record must *explicitly*
+    declare ``status == "failed"`` and ``failure_kind == "transient"``.
+
+    Two consequences are deliberate:
+
+    * ``pending`` / ``ok`` / ``rejected`` / ``skipped`` can never be
+      eligible — they fail the status check. ``skipped`` in particular stays
+      a permanent back-catalog block.
+    * Records written before this feature carry no ``failure_kind`` and so
+      stay blocked forever. Historical production failures are not
+      retroactively unblocked.
+    """
+    if not isinstance(record, dict):
+        return False
+    if record.get("status") != "failed":
+        return False
+    if record.get("failure_kind") != "transient":
+        return False
+    attempts = record.get("attempts", 0)
+    if not isinstance(attempts, int) or attempts >= MAX_TRANSIENT_ATTEMPTS:
+        return False
+    if ignore_cooldown:
+        return True
+    retry_after = record.get("retry_after")
+    if not retry_after:
+        return False
+    try:
+        due = datetime.fromisoformat(retry_after)
+    except (TypeError, ValueError):
+        return False
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return now >= due
+
+
+def is_processed(
+    chat_id: int,
+    content_id: str,
+    *,
+    now: datetime | None = None,
+    ignore_cooldown: bool = False,
+) -> bool:
+    """True if ``content_id`` is currently *blocked* from processing.
+
+    Blocked means a record exists and is not a transient failure that has
+    become retry-eligible. The name is kept for the existing call sites, but
+    the semantics widened from "a record exists" to "may not run now".
+    Callers that genuinely want existence must use
+    :func:`has_processed_record` — notably back-catalog suppression, which
+    would otherwise overwrite a retry-eligible record.
+
+    *now* is injected rather than read from a module-level clock so tests can
+    step past a cooldown without sleeping and without patching ``datetime``.
+    Both new arguments are keyword-only, so no existing call site changes.
+
+    Deliberately a pure predicate: it never writes and never bumps the
+    attempt counter, because :func:`pipeline._process_content` also calls it
+    and must stay side-effect free.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
     with _processed_lock_for(chat_id):
-        cache = _processed_caches.get(chat_id)
-        if cache is None:
-            cache = _load_processed_from_disk(chat_id)
-            _processed_caches[chat_id] = cache
-        cache[content_id] = {
+        record = _ensure_processed_cache(chat_id).get(content_id)
+        if record is None:
+            return False
+        return not _is_retry_eligible(record, now, ignore_cooldown)
+
+
+def has_processed_record(chat_id: int, content_id: str) -> bool:
+    """True if *any* record exists for ``content_id``, ignoring retry policy.
+
+    This is the pre-retry-policy :func:`is_processed` semantics, for callers
+    that mean "have I seen this before?" rather than "may I process this
+    now?".
+    """
+    with _processed_lock_for(chat_id):
+        return content_id in _ensure_processed_cache(chat_id)
+
+
+def mark_processed(
+    chat_id: int,
+    content_id: str,
+    status: str = "ok",
+    *,
+    failure_kind: str | None = None,
+    error_code: str | None = None,
+) -> None:
+    """Mark ``content_id`` as processed for ``chat_id`` and flush atomically.
+
+    For ``status="failed"`` the record carries a classification and a bounded
+    attempt counter:
+
+    * ``failure_kind="permanent"`` — never retried (no captions, video
+      deleted, malformed URL).
+    * ``failure_kind="transient"`` — retried after a growing cooldown until
+      ``attempts`` reaches ``MAX_TRANSIENT_ATTEMPTS``, then blocked for good.
+
+    ``failure_kind=None`` defaults to ``"transient"``. An unclassified
+    failure must never become a permanent blacklist — that is the bug this
+    fixes — and the attempt cap bounds the cost of guessing wrong.
+
+    Any non-failed status writes a plain two-field record, so content that
+    finally succeeds sheds its failure history and the counter resets.
+    """
+    with _processed_lock_for(chat_id):
+        cache = _ensure_processed_cache(chat_id)
+        record: dict[str, Any] = {
             "status": status,
             "processed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if status == "failed":
+            kind = failure_kind or "transient"
+            previous = cache.get(content_id)
+            prior = 0
+            if isinstance(previous, dict) and previous.get("status") == "failed":
+                candidate = previous.get("attempts", 0)
+                prior = candidate if isinstance(candidate, int) and candidate > 0 else 0
+            attempts = prior + 1
+            record["failure_kind"] = kind
+            record["attempts"] = attempts
+            if error_code:
+                record["error_code"] = error_code
+            if kind == "transient":
+                retry_after = _retry_after_for(attempts)
+                if retry_after:
+                    record["retry_after"] = retry_after
+        cache[content_id] = record
         _flush_processed(chat_id)
 
 

@@ -19,6 +19,51 @@ def test_processed_is_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_cha
     assert is_processed(other_chat_id, "yt:abc123") is False
 
 
+def test_transient_failure_retry_state_is_isolated_per_chat_id(
+    tmp_knowledge_dir, chat_id, other_chat_id
+):
+    """Retry bookkeeping is per-user like every other bit of state."""
+    import json
+
+    from src.config import ensure_user_dirs, user_processed_file
+    from src.storage import (
+        has_processed_record,
+        is_processed,
+        mark_processed,
+    )
+
+    ensure_user_dirs(chat_id)
+    ensure_user_dirs(other_chat_id)
+
+    mark_processed(chat_id, "yt:proxy", status="failed", failure_kind="transient")
+
+    assert is_processed(chat_id, "yt:proxy") is True  # cooling down
+    assert is_processed(other_chat_id, "yt:proxy") is False  # no record at all
+    assert has_processed_record(other_chat_id, "yt:proxy") is False
+
+    other_file = user_processed_file(other_chat_id)
+    if other_file.exists():
+        assert "yt:proxy" not in json.loads(other_file.read_text("utf-8"))
+
+
+def test_attempt_counters_do_not_share_across_chat_ids(
+    tmp_knowledge_dir, chat_id, other_chat_id
+):
+    import src.storage
+    from src.config import ensure_user_dirs
+    from src.storage import mark_processed
+
+    ensure_user_dirs(chat_id)
+    ensure_user_dirs(other_chat_id)
+
+    mark_processed(chat_id, "yt:shared", status="failed", failure_kind="transient")
+    mark_processed(chat_id, "yt:shared", status="failed", failure_kind="transient")
+    mark_processed(other_chat_id, "yt:shared", status="failed", failure_kind="transient")
+
+    assert src.storage._processed_caches[chat_id]["yt:shared"]["attempts"] == 2
+    assert src.storage._processed_caches[other_chat_id]["yt:shared"]["attempts"] == 1
+
+
 def test_pending_is_isolated_per_chat_id(tmp_knowledge_dir, chat_id, other_chat_id, sample_pending_kwargs):
     """Staged entries for one user are invisible to another."""
     from src.config import ensure_user_dirs

@@ -64,6 +64,7 @@ from src.storage import (
     get_recent_entries,
     get_source_text_path,
     get_stats,
+    has_processed_record,
     is_processed,
     make_content_id,
     mark_processed,
@@ -1295,7 +1296,12 @@ def _mark_remaining_channel_videos_skipped(
     videos = fetch_channel_videos(channel_id)
     for video in videos:
         content_id = make_content_id("youtube_video", video["video_id"])
-        if not is_processed(chat_id, content_id):
+        # Existence check, not "may I process this": the intent here is
+        # idempotence — never clobber a record we already have. Under the
+        # retry policy a transient failure past its cooldown reads as
+        # *not* blocked while still having a record, and overwriting it
+        # with "skipped" would silently make that failure permanent.
+        if not has_processed_record(chat_id, content_id):
             mark_processed(chat_id, content_id, status="skipped")
 
 

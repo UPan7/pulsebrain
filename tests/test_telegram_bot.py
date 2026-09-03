@@ -2618,3 +2618,60 @@ async def test_cmd_recent_shows_title_and_url(
     assert f"[{entry_id(12345, path)}]" not in text
     # Discoverability hint for /get is appended
     assert "/get" in text
+
+
+# ── Back-catalog suppression vs the retry policy ───────────────────────────
+
+
+def test_skip_backcatalog_does_not_clobber_transient_failure(tmp_knowledge_dir):
+    """A retry-eligible failure must not be downgraded to a permanent skip.
+
+    _mark_remaining_channel_videos_skipped asks "have I seen this?", not
+    "may I process this?". Using is_processed here would read a cooled-down
+    transient failure as unseen and overwrite it with "skipped" — silently
+    making an infrastructure blip permanent.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    import src.storage
+    from src.config import ensure_user_dirs
+    from src.storage import init_processed
+    from src.telegram_bot import _mark_remaining_channel_videos_skipped
+
+    chat_id = 12345
+    ensure_user_dirs(chat_id)
+    init_processed(chat_id)
+    # Cooldown already elapsed — this is the state where the old
+    # is_processed check reads "unseen" and the bug bites.
+    src.storage._processed_caches[chat_id]["yt:proxy"] = {
+        "status": "failed",
+        "processed_at": "2026-05-08T02:11:00+00:00",
+        "failure_kind": "transient",
+        "attempts": 1,
+        "retry_after": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+    }
+
+    videos = [{"video_id": "proxy", "title": "T", "url": "u", "published": ""}]
+    with patch("src.scheduler.fetch_channel_videos", return_value=videos):
+        _mark_remaining_channel_videos_skipped(chat_id, "UC_test")
+
+    record = src.storage._processed_caches[chat_id]["yt:proxy"]
+    assert record["status"] == "failed"
+    assert record["failure_kind"] == "transient"
+
+
+def test_skip_backcatalog_still_marks_unseen_videos(tmp_knowledge_dir):
+    import src.storage
+    from src.config import ensure_user_dirs
+    from src.storage import init_processed
+    from src.telegram_bot import _mark_remaining_channel_videos_skipped
+
+    chat_id = 12345
+    ensure_user_dirs(chat_id)
+    init_processed(chat_id)
+
+    videos = [{"video_id": "fresh", "title": "T", "url": "u", "published": ""}]
+    with patch("src.scheduler.fetch_channel_videos", return_value=videos):
+        _mark_remaining_channel_videos_skipped(chat_id, "UC_test")
+
+    assert src.storage._processed_caches[chat_id]["yt:fresh"]["status"] == "skipped"

@@ -113,6 +113,49 @@ LLM_MODEL = "openai/gpt-5.4-nano"
 OPENROUTER_CONCURRENCY: int = int(os.environ.get("OPENROUTER_CONCURRENCY", "5"))
 OPENROUTER_SEMAPHORE = threading.Semaphore(OPENROUTER_CONCURRENCY)
 
+
+# ── Retry policy for transient processing failures ──────────────────────────
+# A failed pipeline run is recorded in processed.json. Permanent failures
+# (no captions, video deleted, bad URL) are never retried. Transient ones
+# (dead proxy, IP block, OpenRouter blip) are retried after a growing
+# cooldown until MAX_TRANSIENT_ATTEMPTS is reached, then blocked for good —
+# the cap is what stops the scheduler hammering an item forever.
+#
+# The ladder is indexed by attempt number, so a cap of N uses N-1 delays.
+# The default 5 / "1,6,24,168" retries at roughly +1h, +7h, +31h and +199h
+# after the first failure: a week-long proxy outage is survived and the
+# item dies after ~8 days.
+#
+# Practical ceiling: the scheduler only ever sees a channel's newest 10 RSS
+# entries (see scheduler.fetch_channel_videos). A retry horizon longer than
+# the channel's 10-post window degrades silently into "never retried", so
+# shorten the ladder for channels that post more than about once a day.
+def _parse_backoff_hours(raw: str) -> tuple[int, ...]:
+    """Parse ``"1,6,24,168"`` into ``(1, 6, 24, 168)``.
+
+    Non-numeric and non-positive entries are dropped. Falls back to the
+    default ladder when nothing usable survives — an empty ladder would
+    silently disable retries entirely, which is worse than ignoring a typo.
+    """
+    hours: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            value = int(part)
+        except ValueError:
+            continue
+        if value > 0:
+            hours.append(value)
+    return tuple(hours) if hours else (1, 6, 24, 168)
+
+
+MAX_TRANSIENT_ATTEMPTS: int = int(os.environ.get("MAX_TRANSIENT_ATTEMPTS", "5"))
+RETRY_BACKOFF_HOURS: tuple[int, ...] = _parse_backoff_hours(
+    os.environ.get("RETRY_BACKOFF_HOURS", "1,6,24,168")
+)
+
 # ── Per-user path helpers ───────────────────────────────────────────────────
 def user_dir(chat_id: int) -> Path:
     return USERS_DIR / str(chat_id)

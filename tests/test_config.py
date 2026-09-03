@@ -43,6 +43,42 @@ def test_parse_chat_entries_skips_duplicates_and_invalid():
     assert labels == {12345: "A"}  # first label wins
 
 
+# ── Retry backoff ladder parser (RETRY_BACKOFF_HOURS) ─────────────────────
+
+
+def test_parse_backoff_hours_basic():
+    from src.config import _parse_backoff_hours
+
+    assert _parse_backoff_hours("1,6,24,168") == (1, 6, 24, 168)
+
+
+def test_parse_backoff_hours_tolerates_whitespace_and_blanks():
+    from src.config import _parse_backoff_hours
+
+    assert _parse_backoff_hours(" 1 , ,6 ") == (1, 6)
+
+
+def test_parse_backoff_hours_skips_non_numeric():
+    from src.config import _parse_backoff_hours
+
+    assert _parse_backoff_hours("1,abc,6") == (1, 6)
+
+
+def test_parse_backoff_hours_skips_non_positive():
+    from src.config import _parse_backoff_hours
+
+    assert _parse_backoff_hours("0,-3,6") == (6,)
+
+
+def test_parse_backoff_hours_falls_back_on_garbage():
+    """An empty ladder would silently disable retries — always fall back."""
+    from src.config import _parse_backoff_hours
+
+    assert _parse_backoff_hours("abc") == (1, 6, 24, 168)
+    assert _parse_backoff_hours("") == (1, 6, 24, 168)
+    assert _parse_backoff_hours("0,-1") == (1, 6, 24, 168)
+
+
 def test_load_categories_empty_when_no_file(tmp_knowledge_dir, chat_id):
     """Brand-new user with no categories.yml gets an empty dict — no shared defaults."""
     from src.config import ensure_user_dirs, load_categories

@@ -107,3 +107,71 @@ def test_extract_web_article_strips_comments_and_keeps_tables():
     assert kwargs["include_comments"] is False
     assert kwargs["include_tables"] is True
     assert kwargs["output_format"] == "txt"
+
+
+# ── Failure classification (permanent vs transient) ────────────────────────
+
+
+def test_download_failure_classified_transient():
+    from src.extractors.web import extract_web_article
+
+    sink: dict[str, str] = {}
+    with patch("src.extractors.web.trafilatura.fetch_url", return_value=None):
+        assert extract_web_article("https://x.com/a", failure_out=sink) is None
+    assert sink == {"kind": "transient", "code": "DownloadFailed"}
+
+
+def test_short_text_classified_permanent():
+    """A paywall serves the same bytes in six hours — no point retrying."""
+    from src.extractors.web import extract_web_article
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.web.trafilatura.fetch_url", return_value="<html>..</html>"),
+        patch("src.extractors.web.trafilatura.extract", return_value="too short"),
+        patch("src.extractors.web.trafilatura.extract_metadata", return_value=_meta()),
+    ):
+        assert extract_web_article("https://x.com/a", failure_out=sink) is None
+    assert sink == {"kind": "permanent", "code": "TextTooShort"}
+
+
+def test_empty_text_classified_permanent():
+    from src.extractors.web import extract_web_article
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.web.trafilatura.fetch_url", return_value="<html>..</html>"),
+        patch("src.extractors.web.trafilatura.extract", return_value=None),
+        patch("src.extractors.web.trafilatura.extract_metadata", return_value=_meta()),
+    ):
+        assert extract_web_article("https://x.com/a", failure_out=sink) is None
+    assert sink["kind"] == "permanent"
+
+
+def test_exception_classified_transient():
+    from src.extractors.web import extract_web_article
+
+    sink: dict[str, str] = {}
+    with patch("src.extractors.web.trafilatura.fetch_url", side_effect=OSError("boom")):
+        assert extract_web_article("https://x.com/a", failure_out=sink) is None
+    assert sink == {"kind": "transient", "code": "OSError"}
+
+
+def test_web_failure_out_untouched_on_success():
+    from src.extractors.web import extract_web_article
+
+    sink: dict[str, str] = {}
+    with (
+        patch("src.extractors.web.trafilatura.fetch_url", return_value="<html>..</html>"),
+        patch("src.extractors.web.trafilatura.extract", return_value="x" * 500),
+        patch("src.extractors.web.trafilatura.extract_metadata", return_value=_meta()),
+    ):
+        assert extract_web_article("https://x.com/a", failure_out=sink) is not None
+    assert sink == {}
+
+
+def test_extract_web_article_without_failure_out_still_works():
+    from src.extractors.web import extract_web_article
+
+    with patch("src.extractors.web.trafilatura.fetch_url", return_value=None):
+        assert extract_web_article("https://x.com/a") is None
